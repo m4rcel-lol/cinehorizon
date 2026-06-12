@@ -1,0 +1,1 @@
+import{j as e}from"./index-Bqeiwt8L.js";function n(){return e.jsxs(e.Fragment,{children:[e.jsx("h1",{children:"Settings"}),e.jsxs("div",{className:"panel",children:[e.jsx("h2",{children:"Deployment"}),e.jsxs("p",{children:["Configure storage, CDN, SMTP, JWT keys, and origin settings in your server-side ",e.jsx("code",{children:".env"})," file."]})]})]})}export{n as default};
