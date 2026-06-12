@@ -1,0 +1,45 @@
+{
+  "name": "@cinehorizon/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "worker:dev": "tsx watch src/worker.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.637.0",
+    "@aws-sdk/s3-request-presigner": "3.637.0",
+    "@prisma/client": "5.18.0",
+    "bcryptjs": "2.4.3",
+    "bullmq": "5.12.12",
+    "busboy": "1.6.0",
+    "cookie-parser": "1.4.6",
+    "cors": "2.8.5",
+    "dotenv": "16.4.5",
+    "date-fns": "3.6.0",
+    "express": "4.19.2",
+    "express-rate-limit": "7.4.0",
+    "helmet": "7.1.0",
+    "ioredis": "5.4.1",
+    "jsonwebtoken": "9.0.2",
+    "nanoid": "5.0.7",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "2.4.6",
+    "@types/busboy": "1.5.3",
+    "@types/cookie-parser": "1.4.7",
+    "@types/cors": "2.8.17",
+    "@types/express": "4.17.21",
+    "@types/jsonwebtoken": "9.0.6",
+    "@types/node": "20.14.15",
+    "supertest": "7.0.0",
+    "tsx": "4.16.2",
+    "typescript": "5.5.4",
+    "vitest": "2.0.5"
+  }
+}

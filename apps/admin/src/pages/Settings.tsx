@@ -1,0 +1,1 @@
+export default function Settings(){ return <><h1>Settings</h1><div className="panel"><h2>Deployment</h2><p>Configure storage, CDN, SMTP, JWT keys, and origin settings in your server-side <code>.env</code> file.</p></div></>; }

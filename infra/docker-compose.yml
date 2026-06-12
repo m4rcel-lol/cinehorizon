@@ -1,0 +1,3 @@
+# Convenience copy. The root docker-compose.yml is the canonical compose file.
+include:
+  - ../docker-compose.yml

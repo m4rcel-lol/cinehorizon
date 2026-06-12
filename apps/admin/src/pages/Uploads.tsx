@@ -1,0 +1,3 @@
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../api';
+export default function Uploads(){ const uploads=useQuery({queryKey:['uploads'],queryFn:()=>api<any>('/admin/uploads'),refetchInterval:5000}); return <><h1>Upload Queue</h1><table><thead><tr><th>Content</th><th>File</th><th>Status</th><th>Progress</th><th>Message</th></tr></thead><tbody>{uploads.data?.jobs?.map((j:any)=><tr key={j.id}><td>{j.content?.title ?? j.episode?.title ?? '—'}</td><td>{j.fileName}</td><td><span className={`badge ${j.status.toLowerCase()}`}>{j.status}</span></td><td><div className="bar"><span style={{width:`${j.progress}%`}}/></div></td><td>{j.error ?? j.message}</td></tr>)}</tbody></table></>; }
