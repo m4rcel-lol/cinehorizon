@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { AppError } from '../lib/errors.js';
-import { parseBody } from '../lib/validate.js';
+import { parseBody, requireParam } from '../lib/validate.js';
 import { toProfileDto } from '../lib/mappers.js';
 import { requireAuth } from '../middleware/auth.js';
 
@@ -28,14 +29,20 @@ profileRouter.post('/', asyncHandler(async (req, res) => {
 
 profileRouter.patch('/:id', asyncHandler(async (req, res) => {
   const body = parseBody(req, profilePatchSchema);
-  const profile = await prisma.profile.findFirst({ where: { id: req.params.id, userId: req.auth!.userId } });
+  const id = requireParam(req, 'id');
+  const profile = await prisma.profile.findFirst({ where: { id, userId: req.auth!.userId } });
   if (!profile) throw new AppError(404, 'PROFILE_NOT_FOUND', 'Profile not found');
-  const updated = await prisma.profile.update({ where: { id: profile.id }, data: body });
+  const data: Prisma.ProfileUpdateInput = {};
+  if (body.name !== undefined) data.name = body.name;
+  if (body.avatarIndex !== undefined) data.avatarIndex = body.avatarIndex;
+  if (body.isKids !== undefined) data.isKids = body.isKids;
+  const updated = await prisma.profile.update({ where: { id: profile.id }, data });
   res.json({ profile: toProfileDto(updated) });
 }));
 
 profileRouter.delete('/:id', asyncHandler(async (req, res) => {
-  const profile = await prisma.profile.findFirst({ where: { id: req.params.id, userId: req.auth!.userId } });
+  const id = requireParam(req, 'id');
+  const profile = await prisma.profile.findFirst({ where: { id, userId: req.auth!.userId } });
   if (!profile) throw new AppError(404, 'PROFILE_NOT_FOUND', 'Profile not found');
   const count = await prisma.profile.count({ where: { userId: req.auth!.userId } });
   if (count <= 1) throw new AppError(400, 'LAST_PROFILE', 'Cannot delete the last profile');

@@ -14,12 +14,7 @@ const envSchema = z.object({
   WEB_ORIGIN: z.string().default('http://localhost'),
   ADMIN_ORIGIN: z.string().default('http://localhost/admin'),
   COOKIE_DOMAIN: z.string().optional(),
-  S3_BUCKET: z.string().optional(),
-  S3_REGION: z.string().default('auto'),
-  S3_ENDPOINT: z.string().optional(),
-  AWS_ACCESS_KEY_ID: z.string().optional(),
-  AWS_SECRET_ACCESS_KEY: z.string().optional(),
-  CDN_URL: z.string().default('http://localhost/media'),
+  MEDIA_PUBLIC_URL: z.string().default('http://localhost/media'),
   LOCAL_MEDIA_DIR: z.string().default('./media')
 });
 

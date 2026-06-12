@@ -48,8 +48,8 @@ async function createSession(userId: string, req: import('express').Request) {
     data: {
       userId,
       token: sha256(rawToken),
-      userAgent: req.header('user-agent'),
-      ipAddress: req.ip,
+      userAgent: req.header('user-agent') ?? null,
+      ipAddress: req.ip ?? null,
       expiresAt
     }
   });

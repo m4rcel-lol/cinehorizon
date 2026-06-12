@@ -16,7 +16,7 @@ This repository is intentionally production-shaped: strict TypeScript, versioned
 
 ## Important notes
 
-The project is a complete runnable base, but real production streaming still needs your S3/R2 bucket, CDN domain, SMTP account, and actual uploaded media files. The worker includes a real FFmpeg command builder and queue wiring; S3/R2 upload is implemented behind a storage service and uses local filesystem fallback when object-storage variables are not set.
+The project is a complete runnable base. Uploaded videos are stored on the local filesystem only: the API streams uploads to a temporary file, the worker compresses them into HLS renditions with FFmpeg, and the original upload is deleted after processing so the media volume keeps only compressed playback assets.
 
 ## Requirements
 
@@ -71,7 +71,8 @@ pnpm dev
 pnpm dev          # API, worker, web, admin concurrently
 pnpm build        # build all apps/packages
 pnpm lint         # type-aware lint entry point
-pnpm test         # unit/integration test command placeholder
+pnpm test         # Vitest unit/integration tests
+pnpm test:e2e     # Playwright smoke test for browse -> detail -> player
 pnpm db:generate  # Prisma generate
 pnpm db:push      # Push schema to DB for development
 pnpm db:seed      # Seed demo data
@@ -79,7 +80,20 @@ pnpm db:seed      # Seed demo data
 
 ## Environment
 
-See `.env.example` for all variables. No secrets should be committed. `.env`, keys, local media, and generated files are ignored.
+See `.env.example` for all variables. No secrets should be committed. `.env`, keys, local media, and generated files are ignored by `.gitignore`.
+
+## Verification
+
+```bash
+pnpm db:generate
+pnpm lint
+pnpm test
+pnpm build
+pnpm exec playwright install chromium
+pnpm test:e2e
+```
+
+The API tests use Supertest against the real Express app with Prisma, Redis, storage, and queue boundaries mocked. The web tests use React Testing Library. The Playwright smoke test intercepts `/api/v1` responses so it can verify the core browse-to-player flow without requiring a live database.
 
 ## Routes
 
@@ -120,7 +134,7 @@ See `.env.example` for all variables. No secrets should be committed. `.env`, ke
 
 ## Next steps for real production use
 
-1. Configure R2/S3 and `CDN_URL`.
+1. Size and back up the local media volume configured by `LOCAL_MEDIA_DIR`.
 2. Add your SMTP settings and plug `sendVerificationEmail` into the auth route.
 3. Run Prisma migrations instead of `db push`.
 4. Configure TLS in Nginx or put the stack behind Caddy/Cloudflare.

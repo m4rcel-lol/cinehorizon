@@ -16,12 +16,13 @@ import { healthRouter } from './routes/health.js';
 
 export function createApp() {
   const app = express();
+  const helmetOptions = {
+    crossOriginResourcePolicy: { policy: 'cross-origin' as const },
+    ...(isProduction ? {} : { contentSecurityPolicy: false as const })
+  };
 
   app.set('trust proxy', 1);
-  app.use(helmet({
-    crossOriginResourcePolicy: { policy: 'cross-origin' },
-    contentSecurityPolicy: isProduction ? undefined : false
-  }));
+  app.use(helmet(helmetOptions));
   app.use(cors({
     origin(origin, callback) {
       if (!origin) return callback(null, true);
@@ -34,6 +35,7 @@ export function createApp() {
   app.use(express.json({ limit: '1mb' }));
   app.use(apiLimiter);
   app.use(verifyOrigin);
+  app.use('/media', express.static(env.LOCAL_MEDIA_DIR, { maxAge: isProduction ? '1h' : 0 }));
 
   app.use('/api/v1/health', healthRouter);
   app.use('/api/v1/auth', authRouter);

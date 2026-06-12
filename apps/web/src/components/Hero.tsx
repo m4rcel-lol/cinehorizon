@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { ContentCard } from '../types';
 
-export function Hero({ item }: { item?: ContentCard }) {
+export function Hero({ item }: { item: ContentCard | undefined }) {
   if (!item) return <div className="hero skeleton-hero" />;
   return <section className="hero" style={{ backgroundImage: `linear-gradient(to right, rgba(10,10,10,.92), rgba(10,10,10,.45), rgba(10,10,10,0)), linear-gradient(to top, #0a0a0a, transparent 45%), url(${item.backdropUrl})` }}>
     <div className="hero-content">
