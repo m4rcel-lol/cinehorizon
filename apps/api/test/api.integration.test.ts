@@ -613,6 +613,37 @@ beforeEach(() => {
   state.reset();
 });
 
+describe('cors origins', () => {
+  it('allows loopback aliases and the current forwarded host', async () => {
+    const app = createApp();
+
+    await request(app)
+      .get('/api/v1/health')
+      .set('Origin', 'http://127.0.0.1:5173')
+      .expect('access-control-allow-origin', 'http://127.0.0.1:5173')
+      .expect(200);
+
+    await request(app)
+      .get('/api/v1/health')
+      .set('Origin', 'http://media-box.local:47304')
+      .set('Host', 'media-box.local:47304')
+      .set('X-Forwarded-Proto', 'http')
+      .expect('access-control-allow-origin', 'http://media-box.local:47304')
+      .expect(200);
+  });
+
+  it('does not emit cors headers for unrelated origins', async () => {
+    const app = createApp();
+
+    const response = await request(app)
+      .get('/api/v1/health')
+      .set('Origin', 'http://evil.example')
+      .expect(200);
+
+    expect(response.headers['access-control-allow-origin']).toBeUndefined();
+  });
+});
+
 describe('auth flow', () => {
   it('registers, verifies, logs in, refreshes, and logs out', async () => {
     const app = createApp();

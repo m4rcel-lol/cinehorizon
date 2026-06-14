@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import { env, isProduction } from './config/env.js';
 import { apiLimiter, verifyOrigin } from './middleware/security.js';
 import { errorHandler, notFound } from './lib/errors.js';
+import { isOriginAllowed } from './lib/origins.js';
 import { authRouter } from './routes/auth.js';
 import { profileRouter } from './routes/profiles.js';
 import { contentRouter } from './routes/content.js';
@@ -23,14 +24,16 @@ export function createApp() {
 
   app.set('trust proxy', 1);
   app.use(helmet(helmetOptions));
-  app.use(cors({
+  app.use((req, res, next) => cors({
     origin(origin, callback) {
-      if (!origin) return callback(null, true);
-      const allowed = [env.WEB_ORIGIN, env.ADMIN_ORIGIN, env.BASE_URL].some((item) => origin === item || origin.startsWith(item));
-      callback(allowed ? null : new Error('CORS origin denied'), allowed);
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+      callback(null, isOriginAllowed(origin, req));
     },
     credentials: true
-  }));
+  })(req, res, next));
   app.use(cookieParser());
   app.use(express.json({ limit: '1mb' }));
   app.use(apiLimiter);

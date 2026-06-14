@@ -13,6 +13,7 @@ const envSchema = z.object({
   BASE_URL: z.string().default('http://localhost:47304'),
   WEB_ORIGIN: z.string().default('http://localhost:47304'),
   ADMIN_ORIGIN: z.string().default('http://localhost:47304/admin'),
+  CORS_ORIGINS: z.string().default(''),
   COOKIE_DOMAIN: z.string().optional(),
   MEDIA_PUBLIC_URL: z.string().default('http://localhost:47304/media'),
   LOCAL_MEDIA_DIR: z.string().default('./media')

@@ -42,6 +42,7 @@ services:
       BASE_URL: http://localhost:47304
       WEB_ORIGIN: http://localhost:47304
       ADMIN_ORIGIN: http://localhost:47304/admin
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
       MEDIA_PUBLIC_URL: http://localhost:47304/media
       LOCAL_MEDIA_DIR: /var/media
     volumes:
@@ -79,6 +80,7 @@ services:
       BASE_URL: http://localhost:47304
       WEB_ORIGIN: http://localhost:47304
       ADMIN_ORIGIN: http://localhost:47304/admin
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
       MEDIA_PUBLIC_URL: http://localhost:47304/media
       LOCAL_MEDIA_DIR: /var/media
     volumes:

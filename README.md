@@ -82,6 +82,8 @@ pnpm db:seed      # Seed the admin account and base genres
 
 See `.env.example` for all variables. No secrets should be committed. `.env`, keys, local media, and generated files are ignored by `.gitignore`.
 
+If you open the Docker site through a hostname other than `localhost` or `127.0.0.1`, set `CORS_ORIGINS` in `.env` to the exact browser origin, for example `CORS_ORIGINS=http://192.168.1.20:47304`.
+
 ## Verification
 
 ```bash
