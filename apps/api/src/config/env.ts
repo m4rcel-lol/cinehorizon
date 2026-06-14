@@ -10,11 +10,11 @@ const envSchema = z.object({
   JWT_PUBLIC_KEY_PATH: z.string().default('./keys/public.pem'),
   ACCESS_TOKEN_TTL: z.string().default('15m'),
   REFRESH_TOKEN_DAYS: z.coerce.number().int().positive().default(30),
-  BASE_URL: z.string().default('http://localhost'),
-  WEB_ORIGIN: z.string().default('http://localhost'),
-  ADMIN_ORIGIN: z.string().default('http://localhost/admin'),
+  BASE_URL: z.string().default('http://localhost:47304'),
+  WEB_ORIGIN: z.string().default('http://localhost:47304'),
+  ADMIN_ORIGIN: z.string().default('http://localhost:47304/admin'),
   COOKIE_DOMAIN: z.string().optional(),
-  MEDIA_PUBLIC_URL: z.string().default('http://localhost/media'),
+  MEDIA_PUBLIC_URL: z.string().default('http://localhost:47304/media'),
   LOCAL_MEDIA_DIR: z.string().default('./media')
 });
 

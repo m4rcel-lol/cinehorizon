@@ -38,9 +38,9 @@ docker compose up --build
 
 Then open:
 
-- User app: http://localhost
-- Admin panel: http://localhost/admin
-- API health: http://localhost/api/v1/health
+- User app: http://localhost:47304
+- Admin panel: http://localhost:47304/admin
+- API health: http://localhost:47304/api/v1/health
 
 Seeded admin credentials come from `.env`:
 
