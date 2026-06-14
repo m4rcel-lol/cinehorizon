@@ -35,6 +35,7 @@ services:
       REDIS_URL: redis://redis:6379
       JWT_PRIVATE_KEY_PATH: /keys/private.pem
       JWT_PUBLIC_KEY_PATH: /keys/public.pem
+      MEDIA_PUBLIC_URL: http://localhost/media
       LOCAL_MEDIA_DIR: /var/media
     volumes:
       - ./keys:/keys:ro
@@ -58,6 +59,7 @@ services:
       REDIS_URL: redis://redis:6379
       JWT_PRIVATE_KEY_PATH: /keys/private.pem
       JWT_PUBLIC_KEY_PATH: /keys/public.pem
+      MEDIA_PUBLIC_URL: http://localhost/media
       LOCAL_MEDIA_DIR: /var/media
     volumes:
       - ./keys:/keys:ro

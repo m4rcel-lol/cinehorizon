@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { AppError } from '../lib/errors.js';
-import { parseQuery } from '../lib/validate.js';
+import { parseQuery, requireActiveProfileId, requireIntParam, requireParam } from '../lib/validate.js';
 import { requireActiveProfile, requireAuth } from '../middleware/auth.js';
 import { toContentCardDto, toGenreDto } from '../lib/mappers.js';
-import { signPlaybackUrl } from '../services/storage.js';
+import { resolvePlaybackUrl } from '../services/storage.js';
 
 export const contentRouter = Router();
 
@@ -18,8 +19,12 @@ const browseQuery = z.object({
   q: z.string().optional()
 });
 
-const includeCard = { genres: true } as const;
-const includeDetail = { genres: true, cast: true, seasons: { orderBy: { number: 'asc' as const }, include: { episodes: { orderBy: { number: 'asc' as const } } } } } as const;
+const includeCard = Prisma.validator<Prisma.ContentInclude>()({ genres: true });
+const includeDetail = Prisma.validator<Prisma.ContentInclude>()({
+  genres: true,
+  cast: true,
+  seasons: { orderBy: { number: 'asc' }, include: { episodes: { orderBy: { number: 'asc' } } } }
+});
 
 contentRouter.get('/', asyncHandler(async (req, res) => {
   const query = parseQuery(req, browseQuery);
@@ -62,8 +67,9 @@ contentRouter.get('/genres', asyncHandler(async (_req, res) => {
 }));
 
 contentRouter.get('/continue-watching', requireAuth, requireActiveProfile, asyncHandler(async (req, res) => {
+  const profileId = requireActiveProfileId(req);
   const rows = await prisma.watchHistory.findMany({
-    where: { profileId: req.activeProfileId, progressSeconds: { gt: 0 } },
+    where: { profileId, progressSeconds: { gt: 0 } },
     include: { content: { include: includeCard } },
     orderBy: { updatedAt: 'desc' },
     take: 20
@@ -72,25 +78,30 @@ contentRouter.get('/continue-watching', requireAuth, requireActiveProfile, async
 }));
 
 contentRouter.get('/:slug', asyncHandler(async (req, res) => {
-  const content = await prisma.content.findUnique({ where: { slug: req.params.slug }, include: includeDetail });
+  const slug = requireParam(req, 'slug');
+  const content = await prisma.content.findUnique({ where: { slug }, include: includeDetail });
   if (!content || content.status !== 'PUBLISHED') throw new AppError(404, 'CONTENT_NOT_FOUND', 'Content not found');
   res.json({ content: { ...toContentCardDto(content), cast: content.cast, seasons: content.seasons, maturityTags: content.maturityTags } });
 }));
 
 contentRouter.get('/:slug/episodes/:season', asyncHandler(async (req, res) => {
-  const content = await prisma.content.findUnique({ where: { slug: req.params.slug }, include: { seasons: { where: { number: Number(req.params.season) }, include: { episodes: { orderBy: { number: 'asc' } } } } } });
+  const slug = requireParam(req, 'slug');
+  const seasonNumber = requireIntParam(req, 'season');
+  const content = await prisma.content.findUnique({ where: { slug }, include: { seasons: { where: { number: seasonNumber }, include: { episodes: { orderBy: { number: 'asc' } } } } } });
   if (!content) throw new AppError(404, 'CONTENT_NOT_FOUND', 'Content not found');
   res.json({ episodes: content.seasons[0]?.episodes ?? [] });
 }));
 
 contentRouter.get('/:slug/playback', requireAuth, requireActiveProfile, asyncHandler(async (req, res) => {
+  const slug = requireParam(req, 'slug');
+  const profileId = requireActiveProfileId(req);
   const episodeId = typeof req.query.episodeId === 'string' ? req.query.episodeId : undefined;
-  const content = await prisma.content.findUnique({ where: { slug: req.params.slug } });
+  const content = await prisma.content.findUnique({ where: { slug } });
   if (!content) throw new AppError(404, 'CONTENT_NOT_FOUND', 'Content not found');
   const video = await prisma.video.findFirst({ where: episodeId ? { episodeId, status: 'READY' } : { contentId: content.id, status: 'READY' }, orderBy: { uploadedAt: 'desc' } });
   if (!video) throw new AppError(404, 'VIDEO_NOT_READY', 'Video is not ready');
-  const historyKey = `${req.activeProfileId}:${content.id}:${episodeId ?? 'movie'}`;
+  const historyKey = `${profileId}:${content.id}:${episodeId ?? 'movie'}`;
   const history = await prisma.watchHistory.findUnique({ where: { key: historyKey } }).catch(() => null);
-  const streamUrl = await signPlaybackUrl(video.storageKey ?? video.url);
+  const streamUrl = await resolvePlaybackUrl(video.storageKey ?? video.url);
   res.json({ contentId: content.id, title: content.title, episodeTitle: null, streamUrl, mimeType: video.mimeType, progressSeconds: history?.progressSeconds ?? 0 });
 }));

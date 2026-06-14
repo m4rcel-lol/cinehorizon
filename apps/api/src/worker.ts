@@ -15,16 +15,22 @@ const worker = new Worker<TranscodeJobData>('transcode', async (job) => {
   await prisma.video.update({ where: { id: videoId }, data: { status: 'PROCESSING' } });
 
   const outDir = path.join(env.LOCAL_MEDIA_DIR, 'tmp', uploadJobId, 'hls');
-  await prisma.uploadJob.update({ where: { id: uploadJobId }, data: { progress: 20, message: 'Transcoding 480p/720p/1080p' } });
-  await transcodeToHls(inputPath, outDir);
+  try {
+    await prisma.uploadJob.update({ where: { id: uploadJobId }, data: { progress: 20, message: 'Compressing to HLS 480p/720p/1080p' } });
+    await transcodeToHls(inputPath, outDir);
 
-  await prisma.uploadJob.update({ where: { id: uploadJobId }, data: { progress: 85, message: 'Uploading to media storage' } });
-  const keyPrefix = `videos/${contentId ?? 'episode'}/${episodeId ?? 'movie'}/${videoId}/hls`;
-  const masterUrl = await putDirectory(outDir, keyPrefix);
+    await prisma.uploadJob.update({ where: { id: uploadJobId }, data: { progress: 85, message: 'Saving compressed HLS locally' } });
+    const keyPrefix = `videos/${contentId ?? 'episode'}/${episodeId ?? 'movie'}/${videoId}/hls`;
+    const masterUrl = await putDirectory(outDir, keyPrefix);
 
-  await prisma.video.update({ where: { id: videoId }, data: { status: 'READY', url: masterUrl, storageKey: `${keyPrefix}/master.m3u8`, mimeType: 'application/vnd.apple.mpegurl' } });
-  await prisma.uploadJob.update({ where: { id: uploadJobId }, data: { status: 'READY', progress: 100, message: 'Ready' } });
-  await fs.rm(path.dirname(outDir), { recursive: true, force: true });
+    await prisma.video.update({ where: { id: videoId }, data: { status: 'READY', url: masterUrl, storageKey: `${keyPrefix}/master.m3u8`, mimeType: 'application/vnd.apple.mpegurl' } });
+    await prisma.uploadJob.update({ where: { id: uploadJobId }, data: { status: 'READY', progress: 100, message: 'Ready' } });
+  } finally {
+    await Promise.all([
+      fs.rm(path.dirname(outDir), { recursive: true, force: true }),
+      fs.rm(inputPath, { force: true })
+    ]);
+  }
 }, { connection: redis });
 
 worker.on('failed', async (job, error) => {
@@ -32,6 +38,7 @@ worker.on('failed', async (job, error) => {
   const data = job.data as TranscodeJobData;
   await prisma.uploadJob.update({ where: { id: data.uploadJobId }, data: { status: 'FAILED', error: error.message, message: 'Failed' } }).catch(() => undefined);
   await prisma.video.update({ where: { id: data.videoId }, data: { status: 'FAILED' } }).catch(() => undefined);
+  await fs.rm(data.inputPath, { force: true }).catch(() => undefined);
 });
 
 console.log('CineHorizon transcode worker started');

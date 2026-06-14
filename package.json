@@ -7,11 +7,13 @@
     "build": "pnpm -r build",
     "lint": "pnpm -r typecheck",
     "test": "pnpm -r test",
+    "test:e2e": "playwright test",
     "db:generate": "pnpm --filter @cinehorizon/db db:generate",
     "db:push": "pnpm --filter @cinehorizon/db db:push",
     "db:seed": "pnpm --filter @cinehorizon/db db:seed"
   },
   "devDependencies": {
+    "@playwright/test": "1.60.0",
     "@types/node": "20.14.15",
     "concurrently": "8.2.2",
     "typescript": "5.5.4"

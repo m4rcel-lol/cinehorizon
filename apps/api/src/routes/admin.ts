@@ -4,10 +4,11 @@ import path from 'node:path';
 import { Router } from 'express';
 import Busboy from 'busboy';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { AppError } from '../lib/errors.js';
-import { parseBody, parseQuery } from '../lib/validate.js';
+import { parseBody, parseQuery, requireIntParam, requireParam } from '../lib/validate.js';
 import { requireAdmin, requireAuth } from '../middleware/auth.js';
 import { slugify } from '../lib/slug.js';
 import { toContentCardDto, toUserDto } from '../lib/mappers.js';
@@ -70,13 +71,18 @@ adminRouter.get('/users', asyncHandler(async (req, res) => {
 
 adminRouter.patch('/users/:id', asyncHandler(async (req, res) => {
   const body = parseBody(req, z.object({ role: z.enum(['USER', 'ADMIN']).optional(), isVerified: z.boolean().optional() }));
-  const user = await prisma.user.update({ where: { id: req.params.id }, data: body });
+  const id = requireParam(req, 'id');
+  const data: Prisma.UserUpdateInput = {};
+  if (body.role !== undefined) data.role = body.role;
+  if (body.isVerified !== undefined) data.isVerified = body.isVerified;
+  const user = await prisma.user.update({ where: { id }, data });
   res.json({ user: toUserDto(user) });
 }));
 
 adminRouter.delete('/users/:id', asyncHandler(async (req, res) => {
-  if (req.params.id === req.auth!.userId) throw new AppError(400, 'SELF_DELETE_FORBIDDEN', 'You cannot delete your own admin account');
-  await prisma.user.delete({ where: { id: req.params.id } });
+  const id = requireParam(req, 'id');
+  if (id === req.auth!.userId) throw new AppError(400, 'SELF_DELETE_FORBIDDEN', 'You cannot delete your own admin account');
+  await prisma.user.delete({ where: { id } });
   res.status(204).send();
 }));
 
@@ -124,7 +130,7 @@ adminRouter.post('/content', asyncHandler(async (req, res) => {
       status: body.status,
       maturityTags: body.maturityTags,
       genres: { connect: body.genreIds.map((id) => ({ id })) },
-      cast: { create: body.cast }
+      cast: { create: body.cast.map((member) => ({ name: member.name, role: member.role, characterName: member.characterName ?? null })) }
     },
     include: { genres: true }
   });
@@ -133,50 +139,63 @@ adminRouter.post('/content', asyncHandler(async (req, res) => {
 
 adminRouter.patch('/content/:id', asyncHandler(async (req, res) => {
   const body = parseBody(req, contentPatchSchema);
+  const id = requireParam(req, 'id');
+  const data: Prisma.ContentUpdateInput = {};
+  if (body.title !== undefined) data.title = body.title;
+  if (body.slug !== undefined) data.slug = slugify(body.slug);
+  if (body.description !== undefined) data.description = body.description;
+  if (body.type !== undefined) data.type = body.type;
+  if (body.releaseYear !== undefined) data.releaseYear = body.releaseYear;
+  if (body.ageRating !== undefined) data.ageRating = body.ageRating;
+  if (body.durationMinutes !== undefined) data.durationMinutes = body.durationMinutes;
+  if (body.backdropUrl !== undefined) data.backdropUrl = body.backdropUrl;
+  if (body.posterUrl !== undefined) data.posterUrl = body.posterUrl;
+  if (body.logoUrl !== undefined) data.logoUrl = body.logoUrl;
+  if (body.trailerUrl !== undefined) data.trailerUrl = body.trailerUrl;
+  if (body.isFeatured !== undefined) data.isFeatured = body.isFeatured;
+  if (body.isOriginal !== undefined) data.isOriginal = body.isOriginal;
+  if (body.isTrending !== undefined) data.isTrending = body.isTrending;
+  if (body.isTopTen !== undefined) data.isTopTen = body.isTopTen;
+  if (body.topTenRank !== undefined) data.topTenRank = body.topTenRank;
+  if (body.status !== undefined) data.status = body.status;
+  if (body.maturityTags !== undefined) data.maturityTags = body.maturityTags;
+  if (body.genreIds !== undefined) data.genres = { set: body.genreIds.map((genreId) => ({ id: genreId })) };
   const content = await prisma.content.update({
-    where: { id: req.params.id },
-    data: {
-      ...(body.title !== undefined ? { title: body.title } : {}),
-      ...(body.slug !== undefined ? { slug: slugify(body.slug) } : {}),
-      ...(body.description !== undefined ? { description: body.description } : {}),
-      ...(body.type !== undefined ? { type: body.type } : {}),
-      ...(body.releaseYear !== undefined ? { releaseYear: body.releaseYear } : {}),
-      ...(body.ageRating !== undefined ? { ageRating: body.ageRating } : {}),
-      ...(body.durationMinutes !== undefined ? { durationMinutes: body.durationMinutes } : {}),
-      ...(body.backdropUrl !== undefined ? { backdropUrl: body.backdropUrl } : {}),
-      ...(body.posterUrl !== undefined ? { posterUrl: body.posterUrl } : {}),
-      ...(body.logoUrl !== undefined ? { logoUrl: body.logoUrl } : {}),
-      ...(body.trailerUrl !== undefined ? { trailerUrl: body.trailerUrl } : {}),
-      ...(body.isFeatured !== undefined ? { isFeatured: body.isFeatured } : {}),
-      ...(body.isOriginal !== undefined ? { isOriginal: body.isOriginal } : {}),
-      ...(body.isTrending !== undefined ? { isTrending: body.isTrending } : {}),
-      ...(body.isTopTen !== undefined ? { isTopTen: body.isTopTen } : {}),
-      ...(body.topTenRank !== undefined ? { topTenRank: body.topTenRank } : {}),
-      ...(body.status !== undefined ? { status: body.status } : {}),
-      ...(body.maturityTags !== undefined ? { maturityTags: body.maturityTags } : {}),
-      ...(body.genreIds !== undefined ? { genres: { set: body.genreIds.map((id) => ({ id })) } } : {})
-    },
+    where: { id },
+    data,
     include: { genres: true }
   });
   if (body.cast !== undefined) {
     await prisma.castMember.deleteMany({ where: { contentId: content.id } });
-    if (body.cast.length) await prisma.castMember.createMany({ data: body.cast.map((c) => ({ ...c, contentId: content.id })) });
+    if (body.cast.length) {
+      await prisma.castMember.createMany({
+        data: body.cast.map((member) => ({
+          contentId: content.id,
+          name: member.name,
+          role: member.role,
+          characterName: member.characterName ?? null
+        }))
+      });
+    }
   }
   res.json({ content: toContentCardDto(content) });
 }));
 
 adminRouter.delete('/content/:id', asyncHandler(async (req, res) => {
-  const videos = await prisma.video.findMany({ where: { contentId: req.params.id } });
-  await prisma.content.delete({ where: { id: req.params.id } });
+  const id = requireParam(req, 'id');
+  const videos = await prisma.video.findMany({ where: { contentId: id } });
+  await prisma.content.delete({ where: { id } });
   await Promise.all(videos.map((video) => video.storageKey ? deleteObjectByKey(video.storageKey.split('/master.m3u8')[0]!) : Promise.resolve()));
   res.status(204).send();
 }));
 
 adminRouter.post('/content/:id/seasons/:season/episodes', asyncHandler(async (req, res) => {
   const body = parseBody(req, episodeSchema);
-  const content = await prisma.content.findUnique({ where: { id: req.params.id } });
+  const id = requireParam(req, 'id');
+  const seasonNumber = requireIntParam(req, 'season');
+  const content = await prisma.content.findUnique({ where: { id } });
   if (!content) throw new AppError(404, 'CONTENT_NOT_FOUND', 'Content not found');
-  const season = await prisma.season.upsert({ where: { contentId_number: { contentId: content.id, number: Number(req.params.season) } }, update: {}, create: { contentId: content.id, number: Number(req.params.season), title: `Season ${req.params.season}` } });
+  const season = await prisma.season.upsert({ where: { contentId_number: { contentId: content.id, number: seasonNumber } }, update: {}, create: { contentId: content.id, number: seasonNumber, title: `Season ${seasonNumber}` } });
   const episode = await prisma.episode.create({ data: { ...body, seasonId: season.id } });
   res.status(201).json({ episode });
 }));
@@ -225,23 +244,28 @@ async function receiveVideoUpload(req: import('express').Request, target: { cont
 }
 
 adminRouter.post('/content/:id/video', asyncHandler(async (req, res) => {
-  const content = await prisma.content.findUnique({ where: { id: req.params.id } });
+  const id = requireParam(req, 'id');
+  const content = await prisma.content.findUnique({ where: { id } });
   if (!content) throw new AppError(404, 'CONTENT_NOT_FOUND', 'Content not found');
   const job = await receiveVideoUpload(req, { contentId: content.id });
   res.status(202).json(job);
 }));
 
 adminRouter.post('/content/:id/seasons/:season/episodes/:ep/video', asyncHandler(async (req, res) => {
-  const season = await prisma.season.findUnique({ where: { contentId_number: { contentId: req.params.id, number: Number(req.params.season) } } });
+  const id = requireParam(req, 'id');
+  const seasonNumber = requireIntParam(req, 'season');
+  const episodeNumber = requireIntParam(req, 'ep');
+  const season = await prisma.season.findUnique({ where: { contentId_number: { contentId: id, number: seasonNumber } } });
   if (!season) throw new AppError(404, 'SEASON_NOT_FOUND', 'Season not found');
-  const episode = await prisma.episode.findUnique({ where: { seasonId_number: { seasonId: season.id, number: Number(req.params.ep) } } });
+  const episode = await prisma.episode.findUnique({ where: { seasonId_number: { seasonId: season.id, number: episodeNumber } } });
   if (!episode) throw new AppError(404, 'EPISODE_NOT_FOUND', 'Episode not found');
-  const job = await receiveVideoUpload(req, { episodeId: episode.id, contentId: req.params.id });
+  const job = await receiveVideoUpload(req, { episodeId: episode.id, contentId: id });
   res.status(202).json(job);
 }));
 
 adminRouter.get('/uploads/status/:jobId', asyncHandler(async (req, res) => {
-  const job = await prisma.uploadJob.findUnique({ where: { id: req.params.jobId } });
+  const jobId = requireParam(req, 'jobId');
+  const job = await prisma.uploadJob.findUnique({ where: { id: jobId } });
   if (!job) throw new AppError(404, 'UPLOAD_NOT_FOUND', 'Upload job not found');
   res.json({ job });
 }));

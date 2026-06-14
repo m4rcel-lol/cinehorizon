@@ -1,35 +1,33 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { createReadStream } from 'node:fs';
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { env } from '../config/env.js';
-
-const hasS3 = Boolean(env.S3_BUCKET && env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY);
-
-const s3 = hasS3 ? new S3Client({
-  region: env.S3_REGION,
-  endpoint: env.S3_ENDPOINT || undefined,
-  forcePathStyle: Boolean(env.S3_ENDPOINT),
-  credentials: {
-    accessKeyId: env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: env.AWS_SECRET_ACCESS_KEY!
-  }
-}) : null;
+import { AppError } from '../lib/errors.js';
 
 export function isExternalUrl(url: string) {
   return /^https?:\/\//i.test(url);
 }
 
-export async function putObject(key: string, localFilePath: string, contentType: string) {
-  if (s3 && env.S3_BUCKET) {
-    await s3.send(new PutObjectCommand({ Bucket: env.S3_BUCKET, Key: key, Body: createReadStream(localFilePath), ContentType: contentType }));
-    return `${env.CDN_URL.replace(/\/$/, '')}/${key}`;
+function normalizeStorageKey(key: string) {
+  const normalized = path.posix.normalize(key).replace(/^\/+/, '');
+  if (!normalized || normalized === '.' || normalized === '..' || normalized.startsWith('../')) {
+    throw new AppError(400, 'BAD_STORAGE_KEY', 'Storage key must stay within local media storage');
   }
-  const target = path.join(env.LOCAL_MEDIA_DIR, key);
+  return normalized;
+}
+
+function toLocalPath(key: string) {
+  return path.join(env.LOCAL_MEDIA_DIR, ...normalizeStorageKey(key).split('/'));
+}
+
+function toPublicUrl(key: string) {
+  return `${env.MEDIA_PUBLIC_URL.replace(/\/$/, '')}/${normalizeStorageKey(key)}`;
+}
+
+export async function putObject(key: string, localFilePath: string) {
+  const target = toLocalPath(key);
   await fs.mkdir(path.dirname(target), { recursive: true });
   await fs.copyFile(localFilePath, target);
-  return `${env.CDN_URL.replace(/\/$/, '')}/${key}`;
+  return toPublicUrl(key);
 }
 
 export async function putDirectory(localDir: string, keyPrefix: string) {
@@ -45,25 +43,16 @@ export async function putDirectory(localDir: string, keyPrefix: string) {
   for (const file of files) {
     const relative = path.relative(localDir, file).replace(/\\/g, '/');
     const key = `${keyPrefix}/${relative}`;
-    const contentType = key.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : key.endsWith('.ts') ? 'video/mp2t' : 'application/octet-stream';
-    await putObject(key, file, contentType);
+    await putObject(key, file);
   }
-  return `${env.CDN_URL.replace(/\/$/, '')}/${keyPrefix}/master.m3u8`;
+  return toPublicUrl(`${keyPrefix}/master.m3u8`);
 }
 
-export async function signPlaybackUrl(urlOrKey: string, expiresInSeconds = 14_400) {
+export async function resolvePlaybackUrl(urlOrKey: string) {
   if (isExternalUrl(urlOrKey)) return urlOrKey;
-  if (s3 && env.S3_BUCKET) {
-    const command = new GetObjectCommand({ Bucket: env.S3_BUCKET, Key: urlOrKey });
-    return getSignedUrl(s3, command, { expiresIn: expiresInSeconds });
-  }
-  return `${env.CDN_URL.replace(/\/$/, '')}/${urlOrKey}`;
+  return toPublicUrl(urlOrKey);
 }
 
 export async function deleteObjectByKey(key: string) {
-  if (s3 && env.S3_BUCKET) {
-    await s3.send(new DeleteObjectCommand({ Bucket: env.S3_BUCKET, Key: key }));
-    return;
-  }
-  await fs.rm(path.join(env.LOCAL_MEDIA_DIR, key), { recursive: true, force: true });
+  await fs.rm(toLocalPath(key), { recursive: true, force: true });
 }

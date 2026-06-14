@@ -1,0 +1,27 @@
+.DS_Store
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+apps/*/dist/
+packages/*/dist/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+keys/
+*.pem
+
+# Runtime media and temporary files
+media/
+.media/
+tmp/
+*.log
+
+# Test output
+coverage/
+test-results/
+playwright-report/
