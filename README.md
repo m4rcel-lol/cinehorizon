@@ -36,6 +36,8 @@ openssl rsa -in keys/private.pem -pubout -out keys/public.pem
 docker compose up --build
 ```
 
+For local Docker development, missing JWT keys are generated automatically into the ignored `./keys` directory during API startup. Production deployments should mount pre-generated keys instead.
+
 Then open:
 
 - User app: http://localhost:47304

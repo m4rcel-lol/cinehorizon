@@ -46,7 +46,7 @@ services:
       MEDIA_PUBLIC_URL: http://localhost:47304/media
       LOCAL_MEDIA_DIR: /var/media
     volumes:
-      - ./keys:/keys:ro
+      - ./keys:/keys
       - media:/var/media
     depends_on:
       db:
@@ -55,7 +55,7 @@ services:
         condition: service_healthy
     ports:
       - "4000:4000"
-    command: node apps/api/scripts/with-docker-db-url.mjs sh -c "pnpm --filter @cinehorizon/db db:push && pnpm --filter @cinehorizon/db db:seed && node apps/api/dist/server.js"
+    command: node apps/api/scripts/with-docker-db-url.mjs sh -c "node apps/api/scripts/ensure-jwt-keys.mjs && pnpm --filter @cinehorizon/db db:push && pnpm --filter @cinehorizon/db db:seed && node apps/api/dist/server.js"
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4000/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 10s

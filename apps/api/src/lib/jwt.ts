@@ -10,9 +10,14 @@ export interface AccessTokenPayload {
 
 function readKey(path: string) {
   if (!fs.existsSync(path)) {
-    throw new Error(`JWT key not found at ${path}. Generate keys before starting the API.`);
+    throw new Error(`JWT key not found at ${path}. Run infra/scripts/setup.sh or let docker compose generate local development keys before starting the API.`);
   }
   return fs.readFileSync(path, 'utf8');
+}
+
+export function assertJwtKeys() {
+  readKey(env.JWT_PRIVATE_KEY_PATH);
+  readKey(env.JWT_PUBLIC_KEY_PATH);
 }
 
 export function signAccessToken(payload: AccessTokenPayload) {

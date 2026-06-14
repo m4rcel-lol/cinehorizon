@@ -1,7 +1,10 @@
 import { createApp } from './app.js';
 import { env } from './config/env.js';
+import { assertJwtKeys } from './lib/jwt.js';
 import { prisma } from './lib/prisma.js';
 import { redis } from './lib/redis.js';
+
+assertJwtKeys();
 
 const app = createApp();
 const server = app.listen(env.PORT, () => {
