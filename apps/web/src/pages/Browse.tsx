@@ -12,6 +12,13 @@ export default function Browse() {
   const newArrivals = useQuery({ queryKey: ['new-arrivals'], queryFn: contentApi.newArrivals });
   const genres = useQuery({ queryKey: ['genres'], queryFn: contentApi.genres });
   const continueWatching = useQuery({ queryKey: ['continue'], queryFn: contentApi.continueWatching, enabled: Boolean(user) });
+  const hasContent = Boolean(
+    featured.data?.items.length ||
+    trending.data?.items.length ||
+    topTen.data?.items.length ||
+    newArrivals.data?.items.length
+  );
+  const isLoading = featured.isLoading || trending.isLoading || topTen.isLoading || newArrivals.isLoading;
 
   return <main>
     <Hero item={featured.data?.items[0]} />
@@ -22,6 +29,7 @@ export default function Browse() {
       <ContentRow title="Top 10 in Your Country" items={topTen.data?.items} />
       {genres.data?.genres.slice(0, 5).map((genre) => <GenreRow key={genre.id} slug={genre.slug} title={genre.name} />)}
       <ContentRow title="New Arrivals" items={newArrivals.data?.items} />
+      {!isLoading && !hasContent ? <section className="empty-catalog"><h2>No published titles</h2><p>Content appears here after an admin uploads and publishes it.</p></section> : null}
     </div>
     <footer className="footer"><span>CineHorizon</span><span>Help Centre</span><span>Terms</span><span>Privacy</span><small>© 2026 CineHorizon</small></footer>
   </main>;

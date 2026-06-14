@@ -15,7 +15,8 @@ import { toContentCardDto, toUserDto } from '../lib/mappers.js';
 import { assertMagicBytes } from '../middleware/uploadGuard.js';
 import { env } from '../config/env.js';
 import { transcodeQueue } from '../queues/transcodeQueue.js';
-import { deleteObjectByKey } from '../services/storage.js';
+import { deleteObjectByKey, putObject } from '../services/storage.js';
+import { compressImageToWebp } from '../services/imageCompression.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireAdmin);
@@ -47,6 +48,11 @@ const contentSchema = z.object({
 });
 const contentPatchSchema = contentSchema.partial();
 const episodeSchema = z.object({ number: z.number().int().positive(), title: z.string().min(1), description: z.string().min(1), durationMinutes: z.number().int().positive(), thumbnailUrl: z.string().url() });
+const imageMimeToExtension = new Map([
+  ['image/jpeg', 'jpg'],
+  ['image/png', 'png'],
+  ['image/webp', 'webp']
+]);
 
 adminRouter.get('/stats', asyncHandler(async (_req, res) => {
   const [users, movies, series, activeSessions, storageAgg] = await Promise.all([
@@ -95,6 +101,90 @@ adminRouter.post('/genres', asyncHandler(async (req, res) => {
   const { name } = parseBody(req, z.object({ name: z.string().min(1).max(50) }));
   const genre = await prisma.genre.create({ data: { name, slug: slugify(name) } });
   res.status(201).json({ genre });
+}));
+
+async function receiveImageUpload(req: import('express').Request) {
+  const uploadDir = path.join(env.LOCAL_MEDIA_DIR, 'uploads');
+  await fsp.mkdir(uploadDir, { recursive: true });
+  return new Promise<{ url: string; key: string }>((resolve, reject) => {
+    const busboy = Busboy({ headers: req.headers, limits: { files: 1, fileSize: 10 * 1024 * 1024 } });
+    let settled = false;
+    let sawFile = false;
+
+    function resolveOnce(value: { url: string; key: string }) {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    }
+
+    function rejectOnce(error: unknown, tmpPath?: string) {
+      if (settled) return;
+      settled = true;
+      if (tmpPath) void fsp.rm(tmpPath, { force: true }).catch(() => undefined);
+      reject(error);
+    }
+
+    busboy.on('file', (_field, file, info) => {
+      sawFile = true;
+      const mime = info.mimeType;
+      const extension = imageMimeToExtension.get(mime);
+      if (!extension) {
+        file.resume();
+        rejectOnce(new AppError(400, 'BAD_IMAGE_TYPE', 'Only JPG, PNG, and WebP images are allowed'));
+        return;
+      }
+
+      const safeBase = path.basename(info.filename || 'upload').replace(/[^a-zA-Z0-9._-]/g, '_');
+      const tmpPath = path.join(uploadDir, `${Date.now()}-${safeBase}`);
+      const writeStream = fs.createWriteStream(tmpPath);
+      let header = Buffer.alloc(0);
+      let limited = false;
+
+      file.on('data', (chunk: Buffer) => {
+        if (header.length < 12) header = Buffer.concat([header, chunk.subarray(0, 12 - header.length)]);
+      });
+      file.on('limit', () => {
+        limited = true;
+        file.unpipe(writeStream);
+        file.resume();
+        writeStream.destroy();
+        rejectOnce(new AppError(413, 'IMAGE_TOO_LARGE', 'Image upload exceeds the 10MB limit'), tmpPath);
+      });
+      file.pipe(writeStream);
+      writeStream.on('error', (error) => rejectOnce(error, tmpPath));
+      writeStream.on('finish', async () => {
+        if (limited || settled) return;
+        let compressedPath: string | undefined;
+        try {
+          assertMagicBytes(header.subarray(0, 12), mime, 'image');
+          compressedPath = `${tmpPath}.webp`;
+          await compressImageToWebp(tmpPath, compressedPath);
+          const key = `images/${Date.now()}-${safeBase.replace(/\.[^.]+$/, '')}.webp`;
+          const url = await putObject(key, compressedPath);
+          await Promise.all([
+            fsp.rm(tmpPath, { force: true }),
+            fsp.rm(compressedPath, { force: true })
+          ]);
+          resolveOnce({ url, key });
+        } catch (error) {
+          await Promise.all([
+            fsp.rm(tmpPath, { force: true }).catch(() => undefined),
+            compressedPath ? fsp.rm(compressedPath, { force: true }).catch(() => undefined) : Promise.resolve()
+          ]);
+          rejectOnce(error);
+        }
+      });
+    });
+
+    busboy.on('finish', () => { if (!settled && !sawFile) rejectOnce(new AppError(400, 'NO_FILE', 'No image file uploaded')); });
+    busboy.on('error', rejectOnce);
+    req.pipe(busboy);
+  });
+}
+
+adminRouter.post('/uploads/media', asyncHandler(async (req, res) => {
+  const upload = await receiveImageUpload(req);
+  res.status(201).json(upload);
 }));
 
 adminRouter.get('/content', asyncHandler(async (req, res) => {
@@ -232,6 +322,7 @@ async function receiveVideoUpload(req: import('express').Request, target: { cont
           resolved = true;
           resolve({ uploadJobId: uploadJob.id, videoId: video.id });
         } catch (error) {
+          await fsp.rm(tmpPath, { force: true }).catch(() => undefined);
           reject(error);
         }
       });

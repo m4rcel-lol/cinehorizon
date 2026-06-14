@@ -9,7 +9,7 @@ This repository is intentionally production-shaped: strict TypeScript, versioned
 - User app with Netflix-inspired browse, hero, rows, detail page, profile selection, search, and HLS player shell.
 - Admin app with protected login, dashboard, content table/form, users table, and upload queue page.
 - API routes for auth, refresh-token sessions, profiles, content, watchlist, history, search, admin stats/users/content/uploads, health checks, and playback URL lookup.
-- Prisma schema, migrations-ready layout, indexes, seed data with demo content and Mux public HLS samples.
+- Prisma schema, migrations-ready layout, indexes, and seed setup for the admin account plus base genres.
 - Upload/transcode queue scaffold using Busboy + BullMQ + Redis + FFmpeg command builder.
 - Docker Compose stack: PostgreSQL, Redis, API, worker, web, admin, Nginx.
 - Shared packages for DB, types, and UI primitives.
@@ -75,7 +75,7 @@ pnpm test         # Vitest unit/integration tests
 pnpm test:e2e     # Playwright smoke test for browse -> detail -> player
 pnpm db:generate  # Prisma generate
 pnpm db:push      # Push schema to DB for development
-pnpm db:seed      # Seed demo data
+pnpm db:seed      # Seed the admin account and base genres
 ```
 
 ## Environment
@@ -138,4 +138,4 @@ The API tests use Supertest against the real Express app with Prisma, Redis, sto
 2. Add your SMTP settings and plug `sendVerificationEmail` into the auth route.
 3. Run Prisma migrations instead of `db push`.
 4. Configure TLS in Nginx or put the stack behind Caddy/Cloudflare.
-5. Replace demo content and add your first real uploaded HLS videos.
+5. Upload and publish your first titles from the admin panel.

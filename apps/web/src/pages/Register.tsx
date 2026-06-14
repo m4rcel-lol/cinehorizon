@@ -4,9 +4,9 @@ import { api } from '../lib/api';
 import { useAuthStore } from '../stores/auth';
 
 export default function Register() {
-  const [displayName, setDisplayName] = useState('Demo User');
-  const [email, setEmail] = useState('demo@example.com');
-  const [password, setPassword] = useState('ChangeMe123!');
+  const [displayName, setDisplayName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const setAuth = useAuthStore((s) => s.setAuth);
   const navigate = useNavigate();
@@ -18,5 +18,5 @@ export default function Register() {
       navigate('/profiles');
     } catch (err) { setError(err instanceof Error ? err.message : 'Register failed'); }
   }
-  return <main className="auth-page"><form onSubmit={submit} className="auth-card"><h1>Create Account</h1>{error && <p className="form-error">{error}</p>}<input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Display name" /><input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" /><input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="Password" /><button>Start Watching</button><p>Already joined? <Link to="/login">Sign in</Link></p></form></main>;
+  return <main className="auth-page"><form onSubmit={submit} className="auth-card"><h1>Create Account</h1>{error && <p className="form-error">{error}</p>}<input value={displayName} onChange={(e) => setDisplayName(e.target.value)} autoComplete="name" placeholder="Display name" required /><input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" placeholder="Email" required /><input value={password} onChange={(e) => setPassword(e.target.value)} type="password" autoComplete="new-password" placeholder="Password" required /><button>Start Watching</button><p>Already joined? <Link to="/login">Sign in</Link></p></form></main>;
 }
