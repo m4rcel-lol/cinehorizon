@@ -27,6 +27,15 @@ function toPublicUrl(key: string) {
   return `${env.MEDIA_PUBLIC_URL.replace(/\/$/, '')}/${normalizeStorageKey(key)}`;
 }
 
+// Strip scheme://host from URLs that point at our /media mount so assets load
+// from whatever host:port the client is actually using (server IP, localhost,
+// a domain, ...) instead of a baked-in MEDIA_PUBLIC_URL like localhost:47304.
+// External URLs (e.g. TMDB posters) and already-relative paths pass through.
+export function toRelativeMediaUrl<T extends string | null | undefined>(url: T): T {
+  if (typeof url !== 'string') return url;
+  return url.replace(/^https?:\/\/[^/]+(?=\/media\/)/i, '') as T;
+}
+
 export async function putObject(key: string, localFilePath: string) {
   const target = toLocalPath(key);
   await fs.mkdir(path.dirname(target), { recursive: true });
@@ -53,8 +62,8 @@ export async function putDirectory(localDir: string, keyPrefix: string) {
 }
 
 export async function resolvePlaybackUrl(urlOrKey: string) {
-  if (isExternalUrl(urlOrKey)) return urlOrKey;
-  return toPublicUrl(urlOrKey);
+  const url = isExternalUrl(urlOrKey) ? urlOrKey : toPublicUrl(urlOrKey);
+  return toRelativeMediaUrl(url);
 }
 
 export async function deleteObjectByKey(key: string) {

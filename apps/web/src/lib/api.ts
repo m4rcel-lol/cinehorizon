@@ -49,6 +49,15 @@ export const contentApi = {
   playback: (slug: string, episodeId?: string) => api<Playback>(`/content/${slug}/playback${episodeId ? `?episodeId=${episodeId}` : ''}`, { profile: true })
 };
 
+export const profilesApi = {
+  list: () => api<{ profiles: Profile[] }>('/profiles'),
+  create: (data: { name: string; avatarIndex: number; isKids: boolean }) =>
+    api<{ profile: Profile }>('/profiles', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<{ name: string; avatarIndex: number; isKids: boolean }>) =>
+    api<{ profile: Profile }>(`/profiles/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  remove: (id: string) => api<void>(`/profiles/${id}`, { method: 'DELETE' })
+};
+
 export const downloadsApi = {
   list: (category: DownloadCategory) => api<{ items: DownloadItem[] }>(`/downloads?category=${category}`, { auth: false }),
   downloadUrl: (category: DownloadCategory, slug: string) => `${API_URL}/downloads/${category.toLowerCase()}/${encodeURIComponent(slug)}/download`
