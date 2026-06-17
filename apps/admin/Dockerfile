@@ -10,6 +10,6 @@ RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @cinehorizon/admin build
 
 FROM nginx:1.27-alpine
-COPY --from=builder /app/apps/admin/dist /usr/share/nginx/html
+COPY --from=builder /app/apps/admin/dist /usr/share/nginx/html/admin
 COPY apps/admin/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
