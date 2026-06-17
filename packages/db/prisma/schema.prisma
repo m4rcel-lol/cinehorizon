@@ -208,6 +208,37 @@ model UploadJob {
   @@index([episodeId])
 }
 
+model Game {
+  id            String       @id @default(cuid())
+  title         String
+  slug          String       @unique
+  description   String
+  platform      GamePlatform @default(WINDOWS)
+  version       String?
+  developer     String?
+  genre         String?
+  coverImageUrl String
+  fileName      String
+  fileUrl       String
+  storageKey    String
+  fileSize      BigInt
+  downloadCount Int          @default(0)
+  isPublished   Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  @@index([slug])
+  @@index([isPublished])
+  @@index([createdAt])
+}
+
+enum GamePlatform {
+  WINDOWS
+  MAC
+  LINUX
+  ANDROID
+  MULTI
+}
+
 enum Role {
   USER
   ADMIN

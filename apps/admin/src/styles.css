@@ -150,6 +150,9 @@ tr:last-child td { border-bottom: 0; }
 .badge.published, .badge.ready { color: var(--ch-green); background: rgba(70, 211, 105, 0.18); }
 .badge.processing, .badge.pending { color: var(--ch-gold); background: rgba(245, 197, 24, 0.18); }
 .badge.failed, .badge.archived { color: #ff8585; background: rgba(229, 9, 20, 0.18); }
+.badge.draft { color: var(--ch-text-secondary); background: #333; }
+
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .ghost {
   color: #fff;

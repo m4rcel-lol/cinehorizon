@@ -1,4 +1,4 @@
-import type { Content, Genre, Profile, User } from '@prisma/client';
+import type { Content, Game, Genre, Profile, User } from '@prisma/client';
 
 export function toUserDto(user: Pick<User, 'id' | 'email' | 'displayName' | 'role' | 'isVerified' | 'avatarUrl'>) {
   return {
@@ -41,5 +41,24 @@ export function toContentCardDto(content: ContentWithGenres) {
     isTopTen: content.isTopTen,
     topTenRank: content.topTenRank,
     genres: content.genres.map(toGenreDto)
+  };
+}
+
+export function toGameDto(game: Game) {
+  return {
+    id: game.id,
+    title: game.title,
+    slug: game.slug,
+    description: game.description,
+    platform: game.platform,
+    version: game.version,
+    developer: game.developer,
+    genre: game.genre,
+    coverImageUrl: game.coverImageUrl,
+    fileName: game.fileName,
+    fileSize: Number(game.fileSize),
+    downloadCount: game.downloadCount,
+    isPublished: game.isPublished,
+    createdAt: game.createdAt.toISOString()
   };
 }
