@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAdminStore } from '../store';
 import type { AdminUser } from '../store';
@@ -9,7 +9,16 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const setAuth = useAdminStore((state) => state.setAuth);
+  const user = useAdminStore((state) => state.user);
+  const bootstrapped = useAdminStore((state) => state.bootstrapped);
   const navigate = useNavigate();
+
+  // If the silent refresh already restored an admin session, skip the form entirely.
+  useEffect(() => {
+    if (bootstrapped && user?.role === 'ADMIN') navigate('/', { replace: true });
+  }, [bootstrapped, user, navigate]);
+
+  if (bootstrapped && user?.role === 'ADMIN') return <Navigate to="/" replace />;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
