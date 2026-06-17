@@ -197,12 +197,25 @@ adminRouter.get('/content', asyncHandler(async (req, res) => {
   res.json({ items: items.map(toContentCardDto), total, page: query.page, limit: query.limit });
 }));
 
+// Derive a slug that is guaranteed unique, appending -2, -3, ... on collision
+// so creating/renaming content never fails on the slug unique constraint.
+async function uniqueContentSlug(source: string, excludeId?: string) {
+  const root = slugify(source);
+  if (!root) throw new AppError(400, 'BAD_TITLE', 'Title must contain alphanumeric characters');
+  let candidate = root;
+  for (let n = 2; ; n++) {
+    const existing = await prisma.content.findUnique({ where: { slug: candidate }, select: { id: true } });
+    if (!existing || existing.id === excludeId) return candidate;
+    candidate = `${root}-${n}`;
+  }
+}
+
 adminRouter.post('/content', asyncHandler(async (req, res) => {
   const body = parseBody(req, contentSchema);
   const content = await prisma.content.create({
     data: {
       title: body.title,
-      slug: body.slug ? slugify(body.slug) : slugify(body.title),
+      slug: await uniqueContentSlug(body.slug ?? body.title),
       description: body.description,
       type: body.type,
       releaseYear: body.releaseYear,
@@ -232,7 +245,7 @@ adminRouter.patch('/content/:id', asyncHandler(async (req, res) => {
   const id = requireParam(req, 'id');
   const data: Prisma.ContentUpdateInput = {};
   if (body.title !== undefined) data.title = body.title;
-  if (body.slug !== undefined) data.slug = slugify(body.slug);
+  if (body.slug !== undefined) data.slug = await uniqueContentSlug(body.slug, id);
   if (body.description !== undefined) data.description = body.description;
   if (body.type !== undefined) data.type = body.type;
   if (body.releaseYear !== undefined) data.releaseYear = body.releaseYear;
