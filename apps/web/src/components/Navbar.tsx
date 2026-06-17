@@ -35,6 +35,7 @@ export function Navbar() {
       <NavLink to="/browse?type=SERIES">TV Shows</NavLink>
       <NavLink to="/browse?type=MOVIE">Movies</NavLink>
       <NavLink to="/games">Games</NavLink>
+      <NavLink to="/software">Software</NavLink>
       <NavLink to="/browse#popular">New & Popular</NavLink>
       <NavLink to="/account">My List</NavLink>
     </nav>

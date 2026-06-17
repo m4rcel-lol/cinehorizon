@@ -12,7 +12,7 @@ import { contentRouter } from './routes/content.js';
 import { watchlistRouter } from './routes/watchlist.js';
 import { historyRouter } from './routes/history.js';
 import { searchRouter } from './routes/search.js';
-import { gamesRouter } from './routes/games.js';
+import { downloadsRouter } from './routes/downloads.js';
 import { adminRouter } from './routes/admin.js';
 import { healthRouter } from './routes/health.js';
 
@@ -48,7 +48,7 @@ export function createApp() {
   app.use('/api/v1/watchlist', watchlistRouter);
   app.use('/api/v1/history', historyRouter);
   app.use('/api/v1/search', searchRouter);
-  app.use('/api/v1/games', gamesRouter);
+  app.use('/api/v1/downloads', downloadsRouter);
   app.use('/api/v1/admin', adminRouter);
 
   app.use(notFound);
