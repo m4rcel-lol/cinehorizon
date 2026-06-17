@@ -12,7 +12,7 @@ const TitleDetail = lazy(() => import('./pages/TitleDetail'));
 const Player = lazy(() => import('./pages/Player'));
 const Search = lazy(() => import('./pages/Search'));
 const Account = lazy(() => import('./pages/Account'));
-const Games = lazy(() => import('./pages/Games'));
+const Downloads = lazy(() => import('./pages/Downloads'));
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { user } = useAuthStore();
@@ -33,7 +33,8 @@ export default function App() {
       <Route path="/title/:slug" element={<TitleDetail />} />
       <Route path="/watch/:slug" element={<RequireAuth><Player /></RequireAuth>} />
       <Route path="/watch/:slug/episode/:episodeId" element={<RequireAuth><Player /></RequireAuth>} />
-      <Route path="/games" element={<Games />} />
+      <Route path="/games" element={<Downloads category="GAME" />} />
+      <Route path="/software" element={<Downloads category="SOFTWARE" />} />
       <Route path="/search" element={<Search />} />
       <Route path="/account" element={<RequireAuth><Account /></RequireAuth>} />
     </Routes>

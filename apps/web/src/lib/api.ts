@@ -1,4 +1,4 @@
-import type { ContentCard, ContentDetail, Game, Playback, Profile, User } from '../types';
+import type { ContentCard, ContentDetail, DownloadCategory, DownloadItem, Playback, Profile, User } from '../types';
 import { useAuthStore } from '../stores/auth';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '/api/v1';
@@ -49,7 +49,7 @@ export const contentApi = {
   playback: (slug: string, episodeId?: string) => api<Playback>(`/content/${slug}/playback${episodeId ? `?episodeId=${episodeId}` : ''}`, { profile: true })
 };
 
-export const gamesApi = {
-  list: () => api<{ items: Game[] }>('/games', { auth: false }),
-  downloadUrl: (slug: string) => `${API_URL}/games/${encodeURIComponent(slug)}/download`
+export const downloadsApi = {
+  list: (category: DownloadCategory) => api<{ items: DownloadItem[] }>(`/downloads?category=${category}`, { auth: false }),
+  downloadUrl: (category: DownloadCategory, slug: string) => `${API_URL}/downloads/${category.toLowerCase()}/${encodeURIComponent(slug)}/download`
 };

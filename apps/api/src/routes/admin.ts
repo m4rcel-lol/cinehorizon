@@ -11,7 +11,7 @@ import { AppError } from '../lib/errors.js';
 import { parseBody, parseQuery, requireIntParam, requireParam } from '../lib/validate.js';
 import { requireAdmin, requireAuth } from '../middleware/auth.js';
 import { slugify } from '../lib/slug.js';
-import { toContentCardDto, toGameDto, toUserDto } from '../lib/mappers.js';
+import { toContentCardDto, toDownloadDto, toUserDto } from '../lib/mappers.js';
 import { assertMagicBytes } from '../middleware/uploadGuard.js';
 import { env } from '../config/env.js';
 import { transcodeQueue } from '../queues/transcodeQueue.js';
@@ -366,12 +366,18 @@ adminRouter.get('/uploads', asyncHandler(async (_req, res) => {
   res.json({ jobs });
 }));
 
-const gamePlatforms = ['WINDOWS', 'MAC', 'LINUX', 'ANDROID', 'MULTI'] as const;
-const allowedGameExtensions = new Set(['zip', '7z', 'rar', 'exe', 'msi', 'dmg', 'pkg', 'apk', 'deb', 'appimage', 'bin', 'iso', 'tar', 'gz']);
-const gameFieldsSchema = z.object({
+const platforms = ['WINDOWS', 'MAC', 'LINUX', 'ANDROID', 'IOS', 'WEB', 'MULTI'] as const;
+const downloadCategories = ['GAME', 'SOFTWARE'] as const;
+const allowedDownloadExtensions = new Set([
+  'zip', '7z', 'rar', 'tar', 'gz', 'xz', 'bz2',
+  'exe', 'msi', 'dmg', 'pkg', 'apk', 'deb', 'rpm', 'appimage', 'snap', 'flatpak', 'jar',
+  'bin', 'iso', 'img'
+]);
+const downloadFieldsSchema = z.object({
+  category: z.enum(downloadCategories),
   title: z.string().min(1).max(140),
   description: z.string().min(1).max(2000),
-  platform: z.enum(gamePlatforms).default('WINDOWS'),
+  platform: z.enum(platforms).default('WINDOWS'),
   version: z.string().max(40).optional(),
   developer: z.string().max(120).optional(),
   genre: z.string().max(60).optional(),
@@ -379,18 +385,18 @@ const gameFieldsSchema = z.object({
   isPublished: z.enum(['true', 'false']).optional()
 });
 
-const MAX_GAME_BYTES = 5 * 1024 * 1024 * 1024;
+const MAX_DOWNLOAD_BYTES = 5 * 1024 * 1024 * 1024;
 
 function fileExtension(name: string) {
   const dot = name.lastIndexOf('.');
   return dot >= 0 ? name.slice(dot + 1).toLowerCase() : '';
 }
 
-async function receiveGameUpload(req: import('express').Request) {
+async function receiveDownloadUpload(req: import('express').Request) {
   const uploadDir = path.join(env.LOCAL_MEDIA_DIR, 'uploads');
   await fsp.mkdir(uploadDir, { recursive: true });
-  return new Promise<Awaited<ReturnType<typeof prisma.game.create>>>((resolve, reject) => {
-    const busboy = Busboy({ headers: req.headers, limits: { files: 1, fileSize: MAX_GAME_BYTES } });
+  return new Promise<Awaited<ReturnType<typeof prisma.download.create>>>((resolve, reject) => {
+    const busboy = Busboy({ headers: req.headers, limits: { files: 1, fileSize: MAX_DOWNLOAD_BYTES } });
     const fields: Record<string, string> = {};
     let settled = false;
     let sawFile = false;
@@ -413,11 +419,11 @@ async function receiveGameUpload(req: import('express').Request) {
 
     busboy.on('file', (_field, file, info) => {
       sawFile = true;
-      originalName = path.basename(info.filename || 'game.bin');
+      originalName = path.basename(info.filename || 'download.bin');
       const extension = fileExtension(originalName);
-      if (!allowedGameExtensions.has(extension)) {
+      if (!allowedDownloadExtensions.has(extension)) {
         file.resume();
-        fail(new AppError(400, 'BAD_GAME_TYPE', `Unsupported game file type: .${extension || 'unknown'}`));
+        fail(new AppError(400, 'BAD_FILE_TYPE', `Unsupported file type: .${extension || 'unknown'}`));
         return;
       }
       safeBase = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -429,7 +435,7 @@ async function receiveGameUpload(req: import('express').Request) {
         file.unpipe(writeStream);
         file.resume();
         writeStream.destroy();
-        fail(new AppError(413, 'GAME_TOO_LARGE', 'Game file exceeds the 5GB limit'));
+        fail(new AppError(413, 'FILE_TOO_LARGE', 'File exceeds the 5GB limit'));
       });
       file.pipe(writeStream);
       writeStream.on('error', (error) => fail(error));
@@ -440,22 +446,23 @@ async function receiveGameUpload(req: import('express').Request) {
     busboy.on('close', async () => {
       if (settled || limited) return;
       if (!sawFile || !tmpPath) {
-        fail(new AppError(400, 'NO_FILE', 'No game file uploaded'));
+        fail(new AppError(400, 'NO_FILE', 'No file uploaded'));
         return;
       }
       await writeDone;
       if (settled) return;
       try {
-        const parsed = gameFieldsSchema.parse(fields);
+        const parsed = downloadFieldsSchema.parse(fields);
         const slug = slugify(parsed.title);
-        if (!slug) throw new AppError(400, 'BAD_GAME_TITLE', 'Title must contain alphanumeric characters');
-        const existing = await prisma.game.findUnique({ where: { slug } });
-        if (existing) throw new AppError(409, 'GAME_SLUG_TAKEN', 'A game with a similar title already exists');
-        const storageKey = `games/${slug}/${safeBase}`;
+        if (!slug) throw new AppError(400, 'BAD_TITLE', 'Title must contain alphanumeric characters');
+        const existing = await prisma.download.findUnique({ where: { category_slug: { category: parsed.category, slug } } });
+        if (existing) throw new AppError(409, 'SLUG_TAKEN', 'An item with a similar title already exists in this category');
+        const storageKey = `downloads/${parsed.category.toLowerCase()}/${slug}/${safeBase}`;
         const fileUrl = await putObject(storageKey, tmpPath);
         await fsp.rm(tmpPath, { force: true }).catch(() => undefined);
-        const game = await prisma.game.create({
+        const download = await prisma.download.create({
           data: {
+            category: parsed.category,
             title: parsed.title,
             slug,
             description: parsed.description,
@@ -472,7 +479,7 @@ async function receiveGameUpload(req: import('express').Request) {
           }
         });
         settled = true;
-        resolve(game);
+        resolve(download);
       } catch (error) {
         fail(error);
       }
@@ -482,29 +489,32 @@ async function receiveGameUpload(req: import('express').Request) {
   });
 }
 
-adminRouter.get('/games', asyncHandler(async (_req, res) => {
-  const games = await prisma.game.findMany({ orderBy: { createdAt: 'desc' } });
-  res.json({ games: games.map(toGameDto) });
+adminRouter.get('/downloads', asyncHandler(async (req, res) => {
+  const query = parseQuery(req, z.object({ category: z.enum(downloadCategories).optional() }));
+  const items = await prisma.download.findMany({ where: query.category ? { category: query.category } : {}, orderBy: { createdAt: 'desc' } });
+  res.json({ items: items.map(toDownloadDto) });
 }));
 
-adminRouter.post('/games', asyncHandler(async (req, res) => {
-  const game = await receiveGameUpload(req);
-  res.status(201).json({ game: toGameDto(game) });
+adminRouter.post('/downloads', asyncHandler(async (req, res) => {
+  const download = await receiveDownloadUpload(req);
+  res.status(201).json({ item: toDownloadDto(download) });
 }));
 
-adminRouter.patch('/games/:id', asyncHandler(async (req, res) => {
+adminRouter.patch('/downloads/:id', asyncHandler(async (req, res) => {
   const id = requireParam(req, 'id');
   const body = parseBody(req, z.object({
     title: z.string().min(1).max(140).optional(),
     description: z.string().min(1).max(2000).optional(),
-    platform: z.enum(gamePlatforms).optional(),
+    platform: z.enum(platforms).optional(),
     version: z.string().max(40).nullable().optional(),
     developer: z.string().max(120).nullable().optional(),
     genre: z.string().max(60).nullable().optional(),
     coverImageUrl: z.string().url().optional(),
     isPublished: z.boolean().optional()
   }));
-  const data: Prisma.GameUpdateInput = {};
+  const current = await prisma.download.findUnique({ where: { id } });
+  if (!current) throw new AppError(404, 'DOWNLOAD_NOT_FOUND', 'Download not found');
+  const data: Prisma.DownloadUpdateInput = {};
   if (body.title !== undefined) { data.title = body.title; data.slug = slugify(body.title); }
   if (body.description !== undefined) data.description = body.description;
   if (body.platform !== undefined) data.platform = body.platform;
@@ -513,16 +523,16 @@ adminRouter.patch('/games/:id', asyncHandler(async (req, res) => {
   if (body.genre !== undefined) data.genre = body.genre;
   if (body.coverImageUrl !== undefined) data.coverImageUrl = body.coverImageUrl;
   if (body.isPublished !== undefined) data.isPublished = body.isPublished;
-  const game = await prisma.game.update({ where: { id }, data });
-  res.json({ game: toGameDto(game) });
+  const download = await prisma.download.update({ where: { id }, data });
+  res.json({ item: toDownloadDto(download) });
 }));
 
-adminRouter.delete('/games/:id', asyncHandler(async (req, res) => {
+adminRouter.delete('/downloads/:id', asyncHandler(async (req, res) => {
   const id = requireParam(req, 'id');
-  const game = await prisma.game.findUnique({ where: { id } });
-  if (!game) throw new AppError(404, 'GAME_NOT_FOUND', 'Game not found');
-  await prisma.game.delete({ where: { id } });
-  const folderKey = game.storageKey.split('/').slice(0, -1).join('/');
+  const download = await prisma.download.findUnique({ where: { id } });
+  if (!download) throw new AppError(404, 'DOWNLOAD_NOT_FOUND', 'Download not found');
+  await prisma.download.delete({ where: { id } });
+  const folderKey = download.storageKey.split('/').slice(0, -1).join('/');
   if (folderKey) await deleteObjectByKey(folderKey).catch(() => undefined);
   res.status(204).send();
 }));

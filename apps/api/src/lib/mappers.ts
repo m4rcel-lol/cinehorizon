@@ -1,4 +1,4 @@
-import type { Content, Game, Genre, Profile, User } from '@prisma/client';
+import type { Content, Download, Genre, Profile, User } from '@prisma/client';
 
 export function toUserDto(user: Pick<User, 'id' | 'email' | 'displayName' | 'role' | 'isVerified' | 'avatarUrl'>) {
   return {
@@ -44,21 +44,22 @@ export function toContentCardDto(content: ContentWithGenres) {
   };
 }
 
-export function toGameDto(game: Game) {
+export function toDownloadDto(download: Download) {
   return {
-    id: game.id,
-    title: game.title,
-    slug: game.slug,
-    description: game.description,
-    platform: game.platform,
-    version: game.version,
-    developer: game.developer,
-    genre: game.genre,
-    coverImageUrl: game.coverImageUrl,
-    fileName: game.fileName,
-    fileSize: Number(game.fileSize),
-    downloadCount: game.downloadCount,
-    isPublished: game.isPublished,
-    createdAt: game.createdAt.toISOString()
+    id: download.id,
+    category: download.category,
+    title: download.title,
+    slug: download.slug,
+    description: download.description,
+    platform: download.platform,
+    version: download.version,
+    developer: download.developer,
+    genre: download.genre,
+    coverImageUrl: download.coverImageUrl,
+    fileName: download.fileName,
+    fileSize: Number(download.fileSize),
+    downloadCount: download.downloadCount,
+    isPublished: download.isPublished,
+    createdAt: download.createdAt.toISOString()
   };
 }
