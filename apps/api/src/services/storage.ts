@@ -19,6 +19,10 @@ function toLocalPath(key: string) {
   return path.join(env.LOCAL_MEDIA_DIR, ...normalizeStorageKey(key).split('/'));
 }
 
+export function resolveLocalPath(key: string) {
+  return toLocalPath(key);
+}
+
 function toPublicUrl(key: string) {
   return `${env.MEDIA_PUBLIC_URL.replace(/\/$/, '')}/${normalizeStorageKey(key)}`;
 }

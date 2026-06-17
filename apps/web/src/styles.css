@@ -339,6 +339,28 @@ select:focus-visible {
 }
 .empty-catalog p { margin: 0; line-height: 1.55; }
 
+.games-page { padding: 92px 4vw 0; }
+.games-head { margin-bottom: 26px; }
+.games-head h1 { margin: 0 0 6px; font-size: 2rem; color: #fff; }
+.games-head p { margin: 0; color: var(--ch-text-secondary); }
+.games-status { color: var(--ch-text-secondary); }
+.games-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 22px; margin-bottom: 70px; }
+.game-card { display: flex; flex-direction: column; background: var(--ch-surface); border: 1px solid var(--ch-border); border-radius: 10px; overflow: hidden; transition: transform 0.18s ease, border-color 0.18s ease; }
+.game-card:hover { transform: translateY(-4px); border-color: #3a3a3a; }
+.game-cover { aspect-ratio: 16 / 9; background: var(--ch-elevated); }
+.game-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.game-body { display: flex; flex-direction: column; gap: 8px; padding: 16px; flex: 1; }
+.game-meta { display: flex; gap: 8px; align-items: center; }
+.game-platform { font-size: 0.72rem; font-weight: 800; letter-spacing: 0.06em; color: var(--ch-gold); background: rgba(245, 197, 24, 0.14); padding: 3px 8px; border-radius: 999px; }
+.game-version { font-size: 0.78rem; color: var(--ch-text-muted); }
+.game-body h2 { margin: 0; font-size: 1.18rem; color: #fff; }
+.game-dev { margin: 0; font-size: 0.85rem; color: var(--ch-text-secondary); }
+.game-desc { margin: 0; font-size: 0.9rem; line-height: 1.5; color: var(--ch-text-secondary); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.game-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: auto; padding-top: 8px; }
+.game-size { font-size: 0.78rem; color: var(--ch-text-muted); }
+.game-download { background: var(--ch-red); color: #fff; font-weight: 800; padding: 9px 16px; border-radius: 6px; text-decoration: none; white-space: nowrap; transition: background 0.15s ease; }
+.game-download:hover { background: var(--ch-red-hover); }
+
 .footer {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
