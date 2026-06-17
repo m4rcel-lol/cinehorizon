@@ -276,7 +276,9 @@ vi.mock('../src/lib/redis.js', () => ({ redis: { ping: vi.fn(async () => 'PONG')
 vi.mock('../src/queues/transcodeQueue.js', () => ({ transcodeQueue: { add: vi.fn(async () => undefined) } }));
 vi.mock('../src/services/storage.js', () => ({
   resolvePlaybackUrl: vi.fn(async (value: string) => value),
-  deleteObjectByKey: vi.fn(async () => undefined)
+  deleteObjectByKey: vi.fn(async () => undefined),
+  toRelativeMediaUrl: (value: unknown) =>
+    typeof value === 'string' ? value.replace(/^https?:\/\/[^/]+(?=\/media\/)/i, '') : value
 }));
 
 vi.mock('../src/lib/prisma.js', () => {

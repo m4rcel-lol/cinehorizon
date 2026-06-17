@@ -1,4 +1,5 @@
 import type { Content, Download, Genre, Profile, User } from '@prisma/client';
+import { toRelativeMediaUrl } from '../services/storage.js';
 
 export function toUserDto(user: Pick<User, 'id' | 'email' | 'displayName' | 'role' | 'isVerified' | 'avatarUrl'>) {
   return {
@@ -31,10 +32,10 @@ export function toContentCardDto(content: ContentWithGenres) {
     releaseYear: content.releaseYear,
     ageRating: content.ageRating,
     durationMinutes: content.durationMinutes,
-    backdropUrl: content.backdropUrl,
-    posterUrl: content.posterUrl,
-    logoUrl: content.logoUrl,
-    trailerUrl: content.trailerUrl,
+    backdropUrl: toRelativeMediaUrl(content.backdropUrl),
+    posterUrl: toRelativeMediaUrl(content.posterUrl),
+    logoUrl: toRelativeMediaUrl(content.logoUrl),
+    trailerUrl: toRelativeMediaUrl(content.trailerUrl),
     isFeatured: content.isFeatured,
     isOriginal: content.isOriginal,
     isTrending: content.isTrending,
@@ -55,7 +56,7 @@ export function toDownloadDto(download: Download) {
     version: download.version,
     developer: download.developer,
     genre: download.genre,
-    coverImageUrl: download.coverImageUrl,
+    coverImageUrl: toRelativeMediaUrl(download.coverImageUrl),
     fileName: download.fileName,
     fileSize: Number(download.fileSize),
     downloadCount: download.downloadCount,
