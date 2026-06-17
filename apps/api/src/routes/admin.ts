@@ -5,6 +5,7 @@ import { Router } from 'express';
 import Busboy from 'busboy';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
+import { subDays } from 'date-fns';
 import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { AppError } from '../lib/errors.js';
@@ -54,15 +55,53 @@ const imageMimeToExtension = new Map([
   ['image/webp', 'webp']
 ]);
 
+const STATS_WINDOW_DAYS = 14;
+
 adminRouter.get('/stats', asyncHandler(async (_req, res) => {
-  const [users, movies, series, activeSessions, storageAgg] = await Promise.all([
+  const windowStart = subDays(new Date(), STATS_WINDOW_DAYS - 1);
+  windowStart.setHours(0, 0, 0, 0);
+  const [users, movies, series, activeSessions, storageAgg, recentUsers, watchByContent] = await Promise.all([
     prisma.user.count(),
     prisma.content.count({ where: { type: 'MOVIE' } }),
     prisma.content.count({ where: { type: 'SERIES' } }),
     prisma.session.count({ where: { expiresAt: { gt: new Date() } } }),
-    prisma.video.aggregate({ _sum: { size: true } })
+    prisma.video.aggregate({ _sum: { size: true } }),
+    prisma.user.findMany({ where: { createdAt: { gte: windowStart } }, select: { createdAt: true } }),
+    prisma.watchHistory.groupBy({ by: ['contentId'], _sum: { progressSeconds: true }, orderBy: { _sum: { progressSeconds: 'desc' } }, take: 8 })
   ]);
-  res.json({ totalUsers: users, totalContent: movies + series, movies, series, activeSessions, storageBytes: Number(storageAgg._sum.size ?? 0n) });
+
+  // Build a continuous day-by-day signup series so the chart has no gaps.
+  const buckets = new Map<string, number>();
+  for (let i = 0; i < STATS_WINDOW_DAYS; i++) {
+    const day = subDays(new Date(), STATS_WINDOW_DAYS - 1 - i);
+    buckets.set(day.toISOString().slice(0, 10), 0);
+  }
+  for (const u of recentUsers) {
+    const key = u.createdAt.toISOString().slice(0, 10);
+    if (buckets.has(key)) buckets.set(key, (buckets.get(key) ?? 0) + 1);
+  }
+  const newUsers = [...buckets.entries()].map(([date, count]) => ({ date, label: date.slice(5), count }));
+
+  const watchedIds = watchByContent.map((row) => row.contentId);
+  const titles = watchedIds.length
+    ? await prisma.content.findMany({ where: { id: { in: watchedIds } }, select: { id: true, title: true } })
+    : [];
+  const titleById = new Map(titles.map((t) => [t.id, t.title]));
+  const topContent = watchByContent.map((row) => ({
+    title: titleById.get(row.contentId) ?? 'Unknown',
+    minutes: Math.round((row._sum.progressSeconds ?? 0) / 60)
+  }));
+
+  res.json({
+    totalUsers: users,
+    totalContent: movies + series,
+    movies,
+    series,
+    activeSessions,
+    storageBytes: Number(storageAgg._sum.size ?? 0n),
+    newUsers,
+    topContent
+  });
 }));
 
 adminRouter.get('/users', asyncHandler(async (req, res) => {
@@ -304,45 +343,80 @@ adminRouter.post('/content/:id/seasons/:season/episodes', asyncHandler(async (re
 }));
 
 async function receiveVideoUpload(req: import('express').Request, target: { contentId?: string; episodeId?: string }) {
-  await fsp.mkdir(path.join(env.LOCAL_MEDIA_DIR, 'uploads'), { recursive: true });
+  const uploadDir = path.join(env.LOCAL_MEDIA_DIR, 'uploads');
+  await fsp.mkdir(uploadDir, { recursive: true });
   return new Promise<{ uploadJobId: string; videoId: string }>((resolve, reject) => {
     const busboy = Busboy({ headers: req.headers, limits: { files: 1, fileSize: 5 * 1024 * 1024 * 1024 } });
-    let resolved = false;
+    let settled = false;
+    let sawFile = false;
+    let limited = false;
+    let mime = '';
+    let fileName = 'upload';
+    let tmpPath: string | undefined;
+    let header = Buffer.alloc(0);
+    let total = 0n;
+    let writeResolve: () => void = () => undefined;
+    const writeDone = new Promise<void>((r) => { writeResolve = r; });
+
+    function fail(error: unknown) {
+      if (settled) return;
+      settled = true;
+      if (tmpPath) void fsp.rm(tmpPath, { force: true }).catch(() => undefined);
+      reject(error);
+    }
 
     busboy.on('file', (_field, file, info) => {
-      const mime = info.mimeType;
+      sawFile = true;
+      mime = info.mimeType;
+      fileName = info.filename || 'upload';
       if (!['video/mp4', 'video/webm', 'video/quicktime'].includes(mime)) {
         file.resume();
-        reject(new AppError(400, 'BAD_VIDEO_TYPE', 'Only MP4, WebM, and MOV videos are allowed'));
+        fail(new AppError(400, 'BAD_VIDEO_TYPE', 'Only MP4, WebM, and MOV videos are allowed'));
         return;
       }
-      const tmpPath = path.join(env.LOCAL_MEDIA_DIR, 'uploads', `${Date.now()}-${info.filename.replace(/[^a-zA-Z0-9._-]/g, '_')}`);
+      const safeBase = path.basename(fileName).replace(/[^a-zA-Z0-9._-]/g, '_');
+      tmpPath = path.join(uploadDir, `${Date.now()}-${safeBase}`);
       const writeStream = fs.createWriteStream(tmpPath);
-      const chunks: Buffer[] = [];
-      let total = 0n;
       file.on('data', (chunk: Buffer) => {
-        if (Buffer.concat(chunks).length < 12) chunks.push(chunk.subarray(0, Math.max(0, 12 - Buffer.concat(chunks).length)));
+        if (header.length < 12) header = Buffer.concat([header, chunk.subarray(0, 12 - header.length)]);
         total += BigInt(chunk.length);
       });
-      file.pipe(writeStream);
-      writeStream.on('finish', async () => {
-        try {
-          const magic = Buffer.concat(chunks).subarray(0, 12);
-          assertMagicBytes(magic, mime, 'video');
-          const video = await prisma.video.create({ data: { ...target, quality: 'FHD_1080', url: '', size: total, mimeType: mime, status: 'PENDING' } });
-          const uploadJob = await prisma.uploadJob.create({ data: { ...target, videoId: video.id, fileName: info.filename, status: 'PENDING', message: 'Queued' } });
-          await transcodeQueue.add('transcode-video', { uploadJobId: uploadJob.id, videoId: video.id, inputPath: tmpPath, ...target }, { removeOnComplete: true, attempts: 2 });
-          resolved = true;
-          resolve({ uploadJobId: uploadJob.id, videoId: video.id });
-        } catch (error) {
-          await fsp.rm(tmpPath, { force: true }).catch(() => undefined);
-          reject(error);
-        }
+      file.on('limit', () => {
+        limited = true;
+        file.unpipe(writeStream);
+        file.resume();
+        writeStream.destroy();
+        fail(new AppError(413, 'VIDEO_TOO_LARGE', 'Video upload exceeds the 5GB limit'));
       });
+      file.pipe(writeStream);
+      writeStream.on('error', (error) => fail(error));
+      writeStream.on('finish', () => writeResolve());
     });
 
-    busboy.on('finish', () => { if (!resolved) reject(new AppError(400, 'NO_FILE', 'No video file uploaded')); });
-    busboy.on('error', reject);
+    busboy.on('error', fail);
+    // Wait for the file to be fully written before touching the DB/queue: busboy's
+    // completion event fires before the write stream flushes, so the original code
+    // rejected every upload as NO_FILE before the file had been persisted.
+    busboy.on('close', async () => {
+      if (settled || limited) return;
+      if (!sawFile || !tmpPath) {
+        fail(new AppError(400, 'NO_FILE', 'No video file uploaded'));
+        return;
+      }
+      await writeDone;
+      if (settled) return;
+      try {
+        assertMagicBytes(header.subarray(0, 12), mime, 'video');
+        const video = await prisma.video.create({ data: { ...target, quality: 'FHD_1080', url: '', size: total, mimeType: mime, status: 'PENDING' } });
+        const uploadJob = await prisma.uploadJob.create({ data: { ...target, videoId: video.id, fileName, status: 'PENDING', message: 'Queued' } });
+        await transcodeQueue.add('transcode-video', { uploadJobId: uploadJob.id, videoId: video.id, inputPath: tmpPath, ...target }, { removeOnComplete: true, attempts: 2 });
+        settled = true;
+        resolve({ uploadJobId: uploadJob.id, videoId: video.id });
+      } catch (error) {
+        fail(error);
+      }
+    });
+
     req.pipe(busboy);
   });
 }

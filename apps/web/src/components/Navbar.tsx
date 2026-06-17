@@ -38,6 +38,7 @@ export function Navbar() {
       <NavLink to="/software">Software</NavLink>
       <NavLink to="/browse#popular">New & Popular</NavLink>
       <NavLink to="/account">My List</NavLink>
+      {user?.role === 'ADMIN' ? <a className="admin-link" href="/admin">Admin</a> : null}
     </nav>
     <form onSubmit={submit} className="searchbox"><span>⌕</span><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Titles, people, genres" /></form>
     {user ? <div className="profile-menu"><Link to="/profiles" className="avatar">{profile?.name?.[0] ?? user.displayName[0]}</Link><button onClick={logout}>Sign out</button></div> : <Link className="signin" to="/login">Sign in</Link>}

@@ -97,6 +97,14 @@ select:focus-visible {
 }
 .navlinks a.active,
 .navlinks a:hover { color: #fff; }
+.navlinks a.admin-link {
+  color: #fff;
+  border: 1px solid var(--ch-red, #e50914);
+  border-radius: 4px;
+  padding: 4px 12px;
+  background: rgba(229, 9, 20, 0.12);
+}
+.navlinks a.admin-link:hover { background: var(--ch-red, #e50914); }
 
 .searchbox {
   margin-left: auto;

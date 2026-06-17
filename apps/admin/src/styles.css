@@ -163,6 +163,7 @@ tr:last-child td { border-bottom: 0; }
 }
 .danger { color: #ffb3b3; }
 .empty-panel { color: var(--ch-text-secondary); text-align: center; border: 0; border-radius: 0; }
+.admin-loading { display: flex; align-items: center; justify-content: center; min-height: 100vh; color: var(--ch-text-secondary); font-size: 15px; letter-spacing: 0.02em; }
 
 .drawer-backdrop {
   position: fixed;
