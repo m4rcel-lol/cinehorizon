@@ -1,0 +1,106 @@
+name: preview
+
+# Free, on-demand preview environment — no paid hosting. Boots the full
+# docker-compose stack inside the runner and exposes it on a public URL via a
+# Cloudflare quick tunnel, reporting live status + credentials to Discord.
+#
+# LIFETIME: ephemeral. The environment lives only while this job runs (GitHub's
+# hard cap is 6h). Re-run /deploy (or this workflow) to get a fresh one. This is
+# the most that's possible for $0 on GitHub — it is NOT 24/7 hosting.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: preview-env
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350 # ~5h50m, just under GitHub's 6h ceiling
+    env:
+      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+      DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
+      ADMIN_SEED_EMAIL: ${{ secrets.ADMIN_SEED_EMAIL }}
+      SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure Discord channels
+        id: channels
+        run: node infra/deploy/discord-deploy.mjs ensure
+
+      - name: Post "building" status
+        id: start
+        env:
+          STATUS_CHANNEL: ${{ steps.channels.outputs.status_channel }}
+        run: node infra/deploy/discord-deploy.mjs start --channel "$STATUS_CHANNEL" --sha "$SHA" --branch main --actor "${{ github.actor }}"
+
+      - name: Install cloudflared
+        run: |
+          wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O cloudflared
+          chmod +x cloudflared
+          sudo mv cloudflared /usr/local/bin/cloudflared
+
+      - name: Start public tunnel
+        id: tunnel
+        run: |
+          cloudflared tunnel --url http://localhost:47304 --no-autoupdate > tunnel.log 2>&1 &
+          for i in $(seq 1 40); do
+            URL=$(grep -oE 'https://[a-z0-9.-]+\.trycloudflare\.com' tunnel.log | head -1)
+            [ -n "$URL" ] && break
+            sleep 2
+          done
+          if [ -z "$URL" ]; then echo "tunnel failed to start"; cat tunnel.log; exit 1; fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Public URL: $URL"
+
+      - name: Generate admin password
+        id: admin
+        run: |
+          PW="$(openssl rand -base64 18 | tr -dc 'A-Za-z0-9')Aa1!"
+          echo "::add-mask::$PW"
+          echo "password=$PW" >> "$GITHUB_OUTPUT"
+
+      - name: Boot the stack
+        env:
+          PUBLIC_URL: ${{ steps.tunnel.outputs.url }}
+          ADMIN_SEED_PASSWORD: ${{ steps.admin.outputs.password }}
+        run: |
+          export DB_PASSWORD="$(openssl rand -hex 12)"
+          export PUBLIC_URL ADMIN_SEED_PASSWORD
+          cat > .env <<EOF
+          DB_PASSWORD=$DB_PASSWORD
+          ADMIN_SEED_EMAIL=$ADMIN_SEED_EMAIL
+          ADMIN_SEED_PASSWORD=$ADMIN_SEED_PASSWORD
+          CORS_ORIGINS=$PUBLIC_URL
+          EOF
+          docker compose -f docker-compose.yml -f infra/preview/override.yml up -d --build
+          echo "waiting for the stack to become healthy…"
+          for i in $(seq 1 80); do
+            if curl -fsS "http://localhost:47304/api/v1/health" >/dev/null 2>&1; then echo "healthy"; ok=1; break; fi
+            sleep 6
+          done
+          if [ -z "$ok" ]; then echo "stack did not become healthy"; docker compose logs --tail=80 api nginx; exit 1; fi
+
+      - name: Announce live URL + credentials
+        env:
+          STATUS_CHANNEL: ${{ steps.channels.outputs.status_channel }}
+          CREDS_CHANNEL: ${{ steps.channels.outputs.creds_channel }}
+          PW: ${{ steps.admin.outputs.password }}
+          URL: ${{ steps.tunnel.outputs.url }}
+        run: |
+          node infra/deploy/discord-deploy.mjs finish --channel "$STATUS_CHANNEL" --message "${{ steps.start.outputs.message_id }}" --status success --sha "$SHA" --url "$URL"
+          node infra/deploy/discord-deploy.mjs creds --channel "$CREDS_CHANNEL" --email "$ADMIN_SEED_EMAIL" --password "$PW" --url "$URL"
+
+      - name: Keep the preview reachable
+        run: |
+          echo "Preview live at ${{ steps.tunnel.outputs.url }} — staying up until the job ends (~6h)."
+          sleep 18000 || true
+
+      - name: On failure, mark status red
+        if: failure()
+        env:
+          STATUS_CHANNEL: ${{ steps.channels.outputs.status_channel }}
+        run: |
+          node infra/deploy/discord-deploy.mjs finish --channel "$STATUS_CHANNEL" --message "${{ steps.start.outputs.message_id }}" --status failure --sha "$SHA" --url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" || true

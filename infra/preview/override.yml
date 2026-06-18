@@ -1,0 +1,15 @@
+# Compose override for the free GitHub-Actions preview environment. Points the
+# app's public-facing URLs at the Cloudflare tunnel (PUBLIC_URL) instead of the
+# hardcoded localhost:47304 in docker-compose.yml, so redirects and media URLs
+# resolve through the tunnel.
+services:
+  api:
+    environment:
+      BASE_URL: ${PUBLIC_URL}
+      WEB_ORIGIN: ${PUBLIC_URL}
+      ADMIN_ORIGIN: ${PUBLIC_URL}/admin
+      MEDIA_PUBLIC_URL: ${PUBLIC_URL}/media
+      CORS_ORIGINS: ${PUBLIC_URL}
+  worker:
+    environment:
+      MEDIA_PUBLIC_URL: ${PUBLIC_URL}/media

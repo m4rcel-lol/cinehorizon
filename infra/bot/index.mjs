@@ -28,6 +28,7 @@ if (!token || !guildId) {
 const APP_URL = process.env.APP_URL; // e.g. https://cinehorizon-web.onrender.com
 const GITHUB_REPO = process.env.GITHUB_REPO; // e.g. m4rcel-lol/cinehorizon
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN; // PAT with workflow scope
+const DEPLOY_WORKFLOW = process.env.DEPLOY_WORKFLOW || 'preview.yml'; // free preview env by default
 
 const CATEGORY = 'CINEHORIZON DEPLOYS';
 const CHANNELS = [
@@ -117,7 +118,7 @@ async function handleDeploy(i) {
   await i.deferReply();
   try {
     const res = await fetch(
-      `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/deploy.yml/dispatches`,
+      `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${DEPLOY_WORKFLOW}/dispatches`,
       {
         method: 'POST',
         headers: {
