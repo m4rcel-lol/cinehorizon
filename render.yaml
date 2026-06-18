@@ -1,0 +1,95 @@
+# Render blueprint for CineHorizon. Mirrors docker-compose.yml but as managed
+# Render resources. Topology keeps the app single-origin (so sameSite=strict
+# auth cookies work) and keeps media on one shared disk (api + worker in one
+# service), which means no application code changes are required.
+#
+# First-time setup: in the Render dashboard, Blueprints -> New -> point at this
+# repo. Fill the envVars marked `sync: false` after the first deploy (you only
+# know the public URL then). See infra/deploy/README.md.
+
+databases:
+  - name: cinehorizon-db
+    databaseName: cinehorizon
+    user: cinehorizon
+    plan: basic-256mb # bump as needed
+
+services:
+  # Redis-compatible store for BullMQ (transcode queue) and caching.
+  - type: keyvalue
+    name: cinehorizon-redis
+    plan: starter
+    ipAllowList: [] # empty = reachable only from inside the Render network
+
+  # API + transcode worker in one container (shared disk for media + JWT keys).
+  - type: pserv
+    name: cinehorizon-api
+    runtime: docker
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    plan: starter
+    dockerCommand: node apps/api/scripts/start-render.mjs
+    disk:
+      name: cinehorizon-data
+      mountPath: /var/data
+      sizeGB: 10
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "4000"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cinehorizon-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: cinehorizon-redis
+          property: connectionString
+      - key: LOCAL_MEDIA_DIR
+        value: /var/data/media
+      - key: JWT_PRIVATE_KEY_PATH
+        value: /var/data/keys/private.pem
+      - key: JWT_PUBLIC_KEY_PATH
+        value: /var/data/keys/public.pem
+      - key: ACCESS_TOKEN_TTL
+        value: 15m
+      - key: REFRESH_TOKEN_DAYS
+        value: "30"
+      # --- Fill these after the first deploy, once you know the public URL. ---
+      # All the same origin (the nginx service URL), e.g. https://cinehorizon-web.onrender.com
+      - key: BASE_URL
+        sync: false
+      - key: WEB_ORIGIN
+        sync: false
+      - key: ADMIN_ORIGIN
+        sync: false
+      - key: MEDIA_PUBLIC_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: COOKIE_DOMAIN
+        sync: false
+      # Admin seed. The deploy workflow sets ADMIN_SEED_PASSWORD to a fresh
+      # random value via the Render API on each run; set the email here.
+      - key: ADMIN_SEED_EMAIL
+        sync: false
+      - key: ADMIN_SEED_PASSWORD
+        sync: false
+
+  # Public edge: serves web + admin SPAs, proxies /api and /media to the api.
+  - type: web
+    name: cinehorizon-web
+    runtime: docker
+    dockerfilePath: ./infra/render/Dockerfile
+    dockerContext: .
+    plan: starter
+    envVars:
+      - key: API_HOST
+        fromService:
+          type: pserv
+          name: cinehorizon-api
+          property: host
+      - key: API_PORT
+        value: "4000"
