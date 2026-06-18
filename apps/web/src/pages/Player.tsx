@@ -41,6 +41,6 @@ export default function Player() {
   }, [playback.data, slug, episodeId]);
 
   if (!profile) return <main className="player-page"><Link to="/profiles">Choose a profile first</Link></main>;
-  return <main className="player-page"><Link to={`/title/${slug}`} className="player-back">‹ Back</Link><div className="player-title">{playback.data?.title}</div>{playback.isError ? <p>Could not load stream.</p> : <video ref={videoRef} controls autoPlay playsInline onPlay={() => setPaused(false)} onPause={() => setPaused(true)} />}{paused ? <button className="pause-overlay" onClick={() => void videoRef.current?.play()}>▶</button> : null}</main>;
+  return <main className="player-page"><div className="player-stage"><Link to={`/title/${slug}`} className="player-back">‹ Back</Link><div className="player-title">{playback.data?.title}</div>{playback.isError ? <p className="player-error">Could not load stream.</p> : <video ref={videoRef} controls autoPlay playsInline onPlay={() => setPaused(false)} onPause={() => setPaused(true)} />}{paused ? <button className="pause-overlay" onClick={() => void videoRef.current?.play()}>▶</button> : null}</div></main>;
 }
 
