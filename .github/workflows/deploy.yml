@@ -1,0 +1,114 @@
+name: deploy
+
+# Runs only after the `test` workflow succeeds on main, so we never deploy a
+# red build. All credentials come from GitHub Actions secrets — none are baked
+# into the repo.
+on:
+  workflow_run:
+    workflows: ["test"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch: # allow manual redeploys from the Actions tab
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Skip if the upstream test run failed (workflow_dispatch has no upstream).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      API_SERVICE_ID: ${{ secrets.RENDER_API_SERVICE_ID }}
+      WEB_SERVICE_ID: ${{ secrets.RENDER_WEB_SERVICE_ID }}
+      APP_URL: ${{ secrets.RENDER_APP_URL }}
+      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+      DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
+      ADMIN_SEED_EMAIL: ${{ secrets.ADMIN_SEED_EMAIL }}
+      SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure Discord channels exist
+        id: channels
+        run: node infra/deploy/discord-deploy.mjs ensure
+
+      - name: Post "building" status
+        id: start
+        env:
+          STATUS_CHANNEL: ${{ steps.channels.outputs.status_channel }}
+        run: node infra/deploy/discord-deploy.mjs start --channel "$STATUS_CHANNEL" --sha "$SHA" --branch main --actor "${{ github.actor }}"
+
+      - name: Generate a fresh admin password
+        id: admin
+        run: |
+          PW="$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9')Aa1!"
+          echo "::add-mask::$PW"
+          echo "password=$PW" >> "$GITHUB_OUTPUT"
+
+      - name: Rotate ADMIN_SEED_PASSWORD on Render
+        env:
+          PW: ${{ steps.admin.outputs.password }}
+        run: |
+          curl -fsS -X PUT \
+            "https://api.render.com/v1/services/$API_SERVICE_ID/env-vars/ADMIN_SEED_PASSWORD" \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"value\": \"$PW\"}"
+
+      - name: Trigger Render deploys (api, then web)
+        id: trigger
+        run: |
+          deploy() {
+            curl -fsS -X POST "https://api.render.com/v1/services/$1/deploys" \
+              -H "Authorization: Bearer $RENDER_API_KEY" \
+              -H "Content-Type: application/json" -d '{"clearCache":"do_not_clear"}' \
+              | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])"
+          }
+          echo "api_deploy=$(deploy "$API_SERVICE_ID")" >> "$GITHUB_OUTPUT"
+          echo "web_deploy=$(deploy "$WEB_SERVICE_ID")" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for deploys to go live
+        id: wait
+        run: |
+          poll() {
+            local svc="$1" dep="$2"
+            for i in $(seq 1 60); do
+              status=$(curl -fsS "https://api.render.com/v1/services/$svc/deploys/$dep" \
+                -H "Authorization: Bearer $RENDER_API_KEY" \
+                | python3 -c "import sys,json;print(json.load(sys.stdin)['status'])")
+              echo "$svc/$dep -> $status"
+              case "$status" in
+                live) return 0 ;;
+                build_failed|update_failed|canceled|deactivated) return 1 ;;
+              esac
+              sleep 15
+            done
+            return 1
+          }
+          poll "$API_SERVICE_ID" "${{ steps.trigger.outputs.api_deploy }}" \
+            && poll "$WEB_SERVICE_ID" "${{ steps.trigger.outputs.web_deploy }}"
+
+      - name: Post admin credentials (private channel)
+        if: success()
+        env:
+          CREDS_CHANNEL: ${{ steps.channels.outputs.creds_channel }}
+          PW: ${{ steps.admin.outputs.password }}
+        run: node infra/deploy/discord-deploy.mjs creds --channel "$CREDS_CHANNEL" --email "$ADMIN_SEED_EMAIL" --password "$PW" --url "$APP_URL"
+
+      - name: Update status (success or failure)
+        if: always()
+        env:
+          STATUS_CHANNEL: ${{ steps.channels.outputs.status_channel }}
+        run: |
+          STATE=success
+          URL="$APP_URL"
+          if [ "${{ job.status }}" != "success" ]; then
+            STATE=failure
+            URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
+          node infra/deploy/discord-deploy.mjs finish \
+            --channel "$STATUS_CHANNEL" --message "${{ steps.start.outputs.message_id }}" \
+            --status "$STATE" --sha "$SHA" --url "$URL"
