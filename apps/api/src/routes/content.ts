@@ -69,7 +69,7 @@ contentRouter.get('/genres', asyncHandler(async (_req, res) => {
 contentRouter.get('/continue-watching', requireAuth, requireActiveProfile, asyncHandler(async (req, res) => {
   const profileId = requireActiveProfileId(req);
   const rows = await prisma.watchHistory.findMany({
-    where: { profileId, progressSeconds: { gt: 0 } },
+    where: { profileId, progressSeconds: { gt: 0 }, completedAt: null },
     include: { content: { include: includeCard } },
     orderBy: { updatedAt: 'desc' },
     take: 20

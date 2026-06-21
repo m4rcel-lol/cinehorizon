@@ -4,7 +4,7 @@ import { addDays } from 'date-fns';
 import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { AppError } from '../lib/errors.js';
-import { parseBody } from '../lib/validate.js';
+import { parseBody, requireParam } from '../lib/validate.js';
 import { hashPassword, verifyPassword } from '../lib/passwords.js';
 import { randomToken, sha256 } from '../lib/crypto.js';
 import { signAccessToken } from '../lib/jwt.js';
@@ -12,10 +12,11 @@ import { toProfileDto, toUserDto } from '../lib/mappers.js';
 import { env, isProduction } from '../config/env.js';
 import { authLimiter } from '../middleware/security.js';
 import { requireAuth } from '../middleware/auth.js';
+import { sendPasswordResetEmail, sendVerificationEmail } from '../services/email.js';
 
 export const authRouter = Router();
 
-authRouter.use(['/login', '/register', '/refresh'], authLimiter);
+authRouter.use(['/login', '/register', '/refresh', '/forgot-password', '/reset-password'], authLimiter);
 
 const registerSchema = z.object({
   email: z.string().email().transform((v) => v.toLowerCase()),
@@ -29,6 +30,9 @@ const loginSchema = z.object({
 });
 
 const verifySchema = z.object({ token: z.string().min(16) });
+const forgotSchema = z.object({ email: z.string().email().transform((v) => v.toLowerCase()) });
+const resetSchema = z.object({ token: z.string().min(16), password: z.string().min(8).max(128) });
+const changePasswordSchema = z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(8).max(128) });
 
 function refreshCookieOptions() {
   return {
@@ -79,6 +83,7 @@ authRouter.post('/register', asyncHandler(async (req, res) => {
     include: { profiles: true }
   });
   const accessToken = await issueAuth({ id: user.id, email: user.email, role: user.role }, req, res);
+  await sendVerificationEmail(user.email, verificationRaw).catch((error) => console.error('Failed to send verification email', error));
   res.status(201).json({ user: toUserDto(user), profiles: user.profiles.map(toProfileDto), accessToken, devVerificationToken: isProduction ? undefined : verificationRaw });
 }));
 
@@ -122,4 +127,74 @@ authRouter.post('/verify-email', asyncHandler(async (req, res) => {
     prisma.emailVerificationToken.update({ where: { id: record.id }, data: { usedAt: new Date() } })
   ]);
   res.json({ ok: true });
+}));
+
+authRouter.post('/resend-verification', requireAuth, asyncHandler(async (req, res) => {
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: req.auth!.userId } });
+  if (user.isVerified) return res.json({ ok: true, alreadyVerified: true });
+  const verificationRaw = randomToken(32);
+  await prisma.emailVerificationToken.create({ data: { userId: user.id, tokenHash: sha256(verificationRaw), expiresAt: addDays(new Date(), 1) } });
+  await sendVerificationEmail(user.email, verificationRaw).catch((error) => console.error('Failed to send verification email', error));
+  return res.json({ ok: true, devVerificationToken: isProduction ? undefined : verificationRaw });
+}));
+
+authRouter.post('/forgot-password', asyncHandler(async (req, res) => {
+  const { email } = parseBody(req, forgotSchema);
+  const user = await prisma.user.findUnique({ where: { email } });
+  // Always return ok so the endpoint can't be used to enumerate accounts.
+  if (user) {
+    const resetRaw = randomToken(32);
+    await prisma.passwordResetToken.create({ data: { userId: user.id, tokenHash: sha256(resetRaw), expiresAt: new Date(Date.now() + 60 * 60 * 1000) } });
+    await sendPasswordResetEmail(user.email, resetRaw).catch((error) => console.error('Failed to send reset email', error));
+    if (!isProduction) return res.json({ ok: true, devResetToken: resetRaw });
+  }
+  return res.json({ ok: true });
+}));
+
+authRouter.post('/reset-password', asyncHandler(async (req, res) => {
+  const { token, password } = parseBody(req, resetSchema);
+  const record = await prisma.passwordResetToken.findUnique({ where: { tokenHash: sha256(token) } });
+  if (!record || record.usedAt || record.expiresAt < new Date()) throw new AppError(400, 'BAD_RESET_TOKEN', 'Reset link is invalid or expired');
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: record.userId }, data: { passwordHash: await hashPassword(password) } }),
+    prisma.passwordResetToken.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
+    // Revoke every existing session so a leaked password can't keep a session alive.
+    prisma.session.deleteMany({ where: { userId: record.userId } })
+  ]);
+  res.json({ ok: true });
+}));
+
+authRouter.post('/change-password', requireAuth, asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = parseBody(req, changePasswordSchema);
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: req.auth!.userId } });
+  if (!(await verifyPassword(currentPassword, user.passwordHash))) throw new AppError(400, 'BAD_CURRENT_PASSWORD', 'Current password is incorrect');
+  const currentToken = req.cookies?.ch_refresh as string | undefined;
+  await prisma.user.update({ where: { id: user.id }, data: { passwordHash: await hashPassword(newPassword) } });
+  // Keep the current device signed in, drop the rest.
+  await prisma.session.deleteMany({ where: { userId: user.id, ...(currentToken ? { token: { not: sha256(currentToken) } } : {}) } });
+  res.json({ ok: true });
+}));
+
+authRouter.get('/sessions', requireAuth, asyncHandler(async (req, res) => {
+  const currentToken = req.cookies?.ch_refresh as string | undefined;
+  const currentHash = currentToken ? sha256(currentToken) : undefined;
+  const sessions = await prisma.session.findMany({ where: { userId: req.auth!.userId }, orderBy: { createdAt: 'desc' } });
+  res.json({
+    sessions: sessions.map((session) => ({
+      id: session.id,
+      userAgent: session.userAgent,
+      ipAddress: session.ipAddress,
+      createdAt: session.createdAt.toISOString(),
+      expiresAt: session.expiresAt.toISOString(),
+      current: session.token === currentHash
+    }))
+  });
+}));
+
+authRouter.delete('/sessions/:id', requireAuth, asyncHandler(async (req, res) => {
+  const id = requireParam(req, 'id');
+  const session = await prisma.session.findFirst({ where: { id, userId: req.auth!.userId } });
+  if (!session) throw new AppError(404, 'SESSION_NOT_FOUND', 'Session not found');
+  await prisma.session.delete({ where: { id: session.id } });
+  res.status(204).send();
 }));

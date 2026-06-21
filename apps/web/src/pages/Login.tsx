@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuthStore } from '../stores/auth';
+import type { AuthResponse } from '../types';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -14,11 +15,11 @@ export default function Login() {
     e.preventDefault();
     setError('');
     try {
-      const data = await api<{ user: any; profiles: any[]; accessToken: string }>('/auth/login', { method: 'POST', auth: false, body: JSON.stringify({ email, password }) });
+      const data = await api<AuthResponse>('/auth/login', { method: 'POST', auth: false, body: JSON.stringify({ email, password }) });
       setAuth(data.user, data.profiles, data.accessToken);
       navigate('/profiles');
     } catch (err) { setError(err instanceof Error ? err.message : 'Login failed'); }
   }
 
-  return <main className="auth-page"><form onSubmit={submit} className="auth-card"><h1>Sign In</h1>{error && <p className="form-error">{error}</p>}<input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" placeholder="Email" required /><input value={password} onChange={(e) => setPassword(e.target.value)} type="password" autoComplete="current-password" placeholder="Password" required /><button>Sign In</button><p>New to CineHorizon? <Link to="/register">Create account</Link></p></form></main>;
+  return <main className="auth-page"><form onSubmit={submit} className="auth-card"><h1>Sign In</h1>{error && <p className="form-error">{error}</p>}<input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" placeholder="Email" required /><input value={password} onChange={(e) => setPassword(e.target.value)} type="password" autoComplete="current-password" placeholder="Password" required /><button>Sign In</button><p className="auth-links"><Link to="/forgot-password">Forgot password?</Link></p><p>New to CineHorizon? <Link to="/register">Create account</Link></p></form></main>;
 }

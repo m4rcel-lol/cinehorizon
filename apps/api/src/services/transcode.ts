@@ -1,17 +1,8 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { AppError } from '../lib/errors.js';
+import { execFileAsync, resolveFfmpeg } from '../lib/ffmpeg.js';
 
-const execFileAsync = promisify(execFile);
-
-export async function resolveFfmpeg() {
-  const { stdout } = await execFileAsync('which', ['ffmpeg']);
-  const ffmpegPath = stdout.trim();
-  if (!ffmpegPath) throw new AppError(500, 'FFMPEG_NOT_FOUND', 'ffmpeg binary was not found');
-  return ffmpegPath;
-}
+export { resolveFfmpeg };
 
 export function buildFfmpegArgs(input: string, outputDir: string) {
   return [

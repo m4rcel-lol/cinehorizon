@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { api } from '../api';
+import { api, uploadWithProgress } from '../api';
 
 type DownloadCategory = 'GAME' | 'SOFTWARE';
 type Platform = 'WINDOWS' | 'MAC' | 'LINUX' | 'ANDROID' | 'IOS' | 'WEB' | 'MULTI';
@@ -20,8 +20,14 @@ interface DownloadItem {
   fileSize: number;
   downloadCount: number;
   isPublished: boolean;
+  isFeatured: boolean;
+  isTrending: boolean;
+  isTopRanked: boolean;
+  rank: number | null;
   createdAt: string;
 }
+
+type MerchFlag = 'isFeatured' | 'isTrending' | 'isTopRanked';
 
 interface DownloadsResponse {
   items: DownloadItem[];
@@ -56,6 +62,16 @@ export default function Downloads({ category }: { category: DownloadCategory }) 
     mutationFn: (item: DownloadItem) => api(`/admin/downloads/${item.id}`, { method: 'PATCH', body: JSON.stringify({ isPublished: !item.isPublished }) }),
     onSuccess: () => void qc.invalidateQueries({ queryKey })
   });
+  const toggleFlag = useMutation({
+    mutationFn: ({ item, flag }: { item: DownloadItem; flag: MerchFlag }) =>
+      api(`/admin/downloads/${item.id}`, { method: 'PATCH', body: JSON.stringify({ [flag]: !item[flag] }) }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey })
+  });
+  const merch: Array<{ flag: MerchFlag; label: string }> = [
+    { flag: 'isFeatured', label: 'Featured' },
+    { flag: 'isTrending', label: 'Trending' },
+    { flag: 'isTopRanked', label: 'Top' }
+  ];
 
   return <>
     <div className="topline">
@@ -71,16 +87,23 @@ export default function Downloads({ category }: { category: DownloadCategory }) 
     <div className="table-wrap">
       <table>
         <thead>
-          <tr><th>Cover</th><th>Title</th><th>Platform</th><th>Version</th><th>Size</th><th>Downloads</th><th>Status</th><th>Actions</th></tr>
+          <tr><th>Cover</th><th>Title</th><th>Platform</th><th>Size</th><th>Downloads</th><th>Merchandising</th><th>Status</th><th>Actions</th></tr>
         </thead>
         <tbody>
           {items.data?.items.map((item) => <tr key={item.id}>
             <td><img className="thumb" src={item.coverImageUrl} alt="" /></td>
             <td><strong>{item.title}</strong><span className="cell-sub">{item.fileName}</span></td>
             <td>{item.platform}</td>
-            <td>{item.version ?? '—'}</td>
             <td>{formatSize(item.fileSize)}</td>
             <td>{item.downloadCount}</td>
+            <td className="row-actions">
+              {merch.map(({ flag, label }) => <button
+                key={flag}
+                className={`ghost ${item[flag] ? 'on' : ''}`}
+                onClick={() => toggleFlag.mutate({ item, flag })}
+                aria-pressed={item[flag]}
+              >{label}{flag === 'isTopRanked' && item.isTopRanked && item.rank ? ` #${item.rank}` : ''}</button>)}
+            </td>
             <td><span className={`badge ${item.isPublished ? 'published' : 'draft'}`}>{item.isPublished ? 'PUBLISHED' : 'HIDDEN'}</span></td>
             <td className="row-actions">
               <button className="ghost" onClick={() => togglePublish.mutate(item)}>{item.isPublished ? 'Hide' : 'Publish'}</button>
@@ -107,6 +130,8 @@ function Drawer({ category, noun, onClose, onDone }: { category: DownloadCategor
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [phase, setPhase] = useState<'idle' | 'cover' | 'file'>('idle');
+  const [progress, setProgress] = useState(0);
 
   const coverPreview = useObjectUrl(coverFile);
 
@@ -124,7 +149,9 @@ function Drawer({ category, noun, onClose, onDone }: { category: DownloadCategor
     if (!file) { setError(`A ${noun.toLowerCase()} file is required.`); return; }
 
     setSaving(true);
+    setProgress(0);
     try {
+      setPhase('cover');
       const cover = await uploadImage(coverFile);
       const body = new FormData();
       body.append('category', category);
@@ -136,12 +163,14 @@ function Drawer({ category, noun, onClose, onDone }: { category: DownloadCategor
       if (genre.trim()) body.append('genre', genre.trim());
       body.append('coverImageUrl', cover.url);
       body.append('file', file);
-      await api('/admin/downloads', { method: 'POST', body });
+      setPhase('file');
+      await uploadWithProgress('/admin/downloads', body, setProgress);
       onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setSaving(false);
+      setPhase('idle');
     }
   }
 
@@ -172,9 +201,17 @@ function Drawer({ category, noun, onClose, onDone }: { category: DownloadCategor
         <FilePicker label={`${noun} file`} accept={accept} file={file} onChange={setFile} wide />
       </div>
 
+      {saving ? <div className="upload-progress">
+        <div className="upload-progress-head">
+          <span>{phase === 'cover' ? 'Uploading cover image…' : `Uploading ${noun.toLowerCase()} file…`}</span>
+          <span>{phase === 'file' ? `${progress}%` : ''}</span>
+        </div>
+        <div className="bar"><span style={{ width: `${phase === 'file' ? progress : 8}%` }} /></div>
+      </div> : null}
+
       <div className="drawer-actions">
-        <button className="ghost" onClick={onClose}>Cancel</button>
-        <button onClick={() => void save()} disabled={saving}>{saving ? 'Uploading...' : `Save ${noun}`}</button>
+        <button className="ghost" onClick={onClose} disabled={saving}>Cancel</button>
+        <button onClick={() => void save()} disabled={saving}>{saving ? (phase === 'file' ? `Uploading ${progress}%` : 'Uploading…') : `Save ${noun}`}</button>
       </div>
     </aside>
   </div>;

@@ -1,4 +1,4 @@
-import type { ContentCard, ContentDetail, DownloadCategory, DownloadItem, Playback, Profile, User } from '../types';
+import type { ContentCard, ContentDetail, DownloadCategory, DownloadItem, Playback, Profile, Session, User } from '../types';
 import { useAuthStore } from '../stores/auth';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '/api/v1';
@@ -49,6 +49,22 @@ export const contentApi = {
   playback: (slug: string, episodeId?: string) => api<Playback>(`/content/${slug}/playback${episodeId ? `?episodeId=${episodeId}` : ''}`, { profile: true })
 };
 
+export const authApi = {
+  resendVerification: () => api<{ ok: boolean; alreadyVerified?: boolean }>('/auth/resend-verification', { method: 'POST' }),
+  verifyEmail: (token: string) => api<{ ok: boolean }>('/auth/verify-email', { method: 'POST', auth: false, body: JSON.stringify({ token }) }),
+  forgotPassword: (email: string) => api<{ ok: boolean }>('/auth/forgot-password', { method: 'POST', auth: false, body: JSON.stringify({ email }) }),
+  resetPassword: (token: string, password: string) => api<{ ok: boolean }>('/auth/reset-password', { method: 'POST', auth: false, body: JSON.stringify({ token, password }) }),
+  changePassword: (currentPassword: string, newPassword: string) => api<{ ok: boolean }>('/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }),
+  sessions: () => api<{ sessions: Session[] }>('/auth/sessions'),
+  revokeSession: (id: string) => api<void>(`/auth/sessions/${id}`, { method: 'DELETE' })
+};
+
+export const libraryApi = {
+  list: () => api<{ items: DownloadItem[] }>('/library', { profile: true }),
+  save: (downloadId: string) => api<{ ok: boolean }>('/library', { method: 'POST', profile: true, body: JSON.stringify({ downloadId }) }),
+  remove: (downloadId: string) => api<void>(`/library/${downloadId}`, { method: 'DELETE', profile: true })
+};
+
 export const profilesApi = {
   list: () => api<{ profiles: Profile[] }>('/profiles'),
   create: (data: { name: string; avatarIndex: number; isKids: boolean }) =>
@@ -59,6 +75,12 @@ export const profilesApi = {
 };
 
 export const downloadsApi = {
-  list: (category: DownloadCategory) => api<{ items: DownloadItem[] }>(`/downloads?category=${category}`, { auth: false }),
+  list: (category: DownloadCategory, page = 1) =>
+    api<{ items: DownloadItem[]; total: number; page: number; limit: number }>(`/downloads?category=${category}&page=${page}`, { auth: false }),
+  featured: (category: DownloadCategory) => api<{ items: DownloadItem[] }>(`/downloads/featured?category=${category}`, { auth: false }),
+  trending: (category: DownloadCategory) => api<{ items: DownloadItem[] }>(`/downloads/trending?category=${category}`, { auth: false }),
+  top: (category: DownloadCategory) => api<{ items: DownloadItem[] }>(`/downloads/top?category=${category}`, { auth: false }),
+  detail: (category: DownloadCategory, slug: string) =>
+    api<{ item: DownloadItem }>(`/downloads/${category.toLowerCase()}/${encodeURIComponent(slug)}`, { auth: false }),
   downloadUrl: (category: DownloadCategory, slug: string) => `${API_URL}/downloads/${category.toLowerCase()}/${encodeURIComponent(slug)}/download`
 };

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { api } from '../api';
+import { api, uploadWithProgress } from '../api';
 
 type ContentType = 'MOVIE' | 'SERIES';
 type ContentStatus = 'DRAFT' | 'PROCESSING' | 'PUBLISHED' | 'ARCHIVED';
@@ -89,8 +89,8 @@ export default function Content() {
   return <>
     <div className="topline">
       <div>
-        <h1>Content</h1>
-        <p className="muted">Only titles uploaded here appear in the catalog.</p>
+        <h1>Movies &amp; TV</h1>
+        <p className="muted">Movies and series in the streaming catalog. Games and software are managed under their own sections.</p>
       </div>
       <div className="toolbar">
         <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'ALL' | ContentStatus)}>
@@ -153,6 +153,8 @@ function Drawer({ genres, onClose, onDone }: { genres: Genre[]; onClose: () => v
   const [topTenRank, setTopTenRank] = useState(1);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [progress, setProgress] = useState(0);
 
   const posterPreview = useObjectUrl(posterFile);
   const backdropPreview = useObjectUrl(backdropFile);
@@ -170,7 +172,13 @@ function Drawer({ genres, onClose, onDone }: { genres: Genre[]; onClose: () => v
   async function uploadVideo(contentId: string, file: File) {
     const body = new FormData();
     body.append('file', file);
-    await api(`/admin/content/${contentId}/video`, { method: 'POST', body });
+    setUploadingVideo(true);
+    setProgress(0);
+    try {
+      await uploadWithProgress(`/admin/content/${contentId}/video`, body, setProgress);
+    } finally {
+      setUploadingVideo(false);
+    }
   }
 
   async function save() {
@@ -274,9 +282,14 @@ function Drawer({ genres, onClose, onDone }: { genres: Genre[]; onClose: () => v
         </div>
       </fieldset>
 
+      {uploadingVideo ? <div className="upload-progress">
+        <div className="upload-progress-head"><span>Uploading video…</span><span>{progress}%</span></div>
+        <div className="bar"><span style={{ width: `${progress}%` }} /></div>
+      </div> : null}
+
       <div className="drawer-actions">
-        <button className="ghost" onClick={onClose}>Cancel</button>
-        <button onClick={() => void save()} disabled={saving}>{saving ? 'Uploading...' : 'Save Content'}</button>
+        <button className="ghost" onClick={onClose} disabled={saving}>Cancel</button>
+        <button onClick={() => void save()} disabled={saving}>{uploadingVideo ? `Uploading video ${progress}%` : saving ? 'Saving…' : 'Save Content'}</button>
       </div>
     </aside>
   </div>;

@@ -1,17 +1,6 @@
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { AppError } from '../lib/errors.js';
-
-const execFileAsync = promisify(execFile);
-
-async function resolveFfmpeg() {
-  const { stdout } = await execFileAsync('which', ['ffmpeg']);
-  const ffmpegPath = stdout.trim();
-  if (!ffmpegPath) throw new AppError(500, 'FFMPEG_NOT_FOUND', 'ffmpeg binary was not found');
-  return ffmpegPath;
-}
+import { execFileAsync, resolveFfmpeg } from '../lib/ffmpeg.js';
 
 export async function compressImageToWebp(inputPath: string, outputPath: string) {
   await fsp.mkdir(path.dirname(outputPath), { recursive: true });

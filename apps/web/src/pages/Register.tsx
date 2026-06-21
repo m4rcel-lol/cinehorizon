@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuthStore } from '../stores/auth';
+import type { AuthResponse } from '../types';
 
 export default function Register() {
   const [displayName, setDisplayName] = useState('');
@@ -13,7 +14,7 @@ export default function Register() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     try {
-      const data = await api<{ user: any; profiles: any[]; accessToken: string }>('/auth/register', { method: 'POST', auth: false, body: JSON.stringify({ displayName, email, password }) });
+      const data = await api<AuthResponse>('/auth/register', { method: 'POST', auth: false, body: JSON.stringify({ displayName, email, password }) });
       setAuth(data.user, data.profiles, data.accessToken);
       navigate('/profiles');
     } catch (err) { setError(err instanceof Error ? err.message : 'Register failed'); }

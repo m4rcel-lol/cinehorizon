@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { contentApi } from '../lib/api';
 import { Hero } from '../components/Hero';
 import { ContentRow } from '../components/ContentRow';
+import { Footer } from '../components/Footer';
 import { useAuthStore } from '../stores/auth';
 
 export default function Browse() {
@@ -31,7 +32,7 @@ export default function Browse() {
       <ContentRow title="New Arrivals" items={newArrivals.data?.items} />
       {!isLoading && !hasContent ? <section className="empty-catalog"><h2>No published titles</h2><p>Content appears here after an admin uploads and publishes it.</p></section> : null}
     </div>
-    <footer className="footer"><span>CineHorizon</span><span>Help Centre</span><span>Terms</span><span>Privacy</span><small>© 2026 CineHorizon</small></footer>
+    <Footer />
   </main>;
 }
 

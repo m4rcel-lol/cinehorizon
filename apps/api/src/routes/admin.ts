@@ -9,7 +9,7 @@ import { subDays } from 'date-fns';
 import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { AppError } from '../lib/errors.js';
-import { parseBody, parseQuery, requireIntParam, requireParam } from '../lib/validate.js';
+import { parseBody, parseQuery, pickDefined, requireIntParam, requireParam } from '../lib/validate.js';
 import { requireAdmin, requireAuth } from '../middleware/auth.js';
 import { slugify } from '../lib/slug.js';
 import { toContentCardDto, toDownloadDto, toUserDto } from '../lib/mappers.js';
@@ -18,6 +18,7 @@ import { env } from '../config/env.js';
 import { transcodeQueue } from '../queues/transcodeQueue.js';
 import { deleteObjectByKey, putObject } from '../services/storage.js';
 import { compressImageToWebp } from '../services/imageCompression.js';
+import { emailStatus } from '../services/email.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireAdmin);
@@ -60,14 +61,18 @@ const STATS_WINDOW_DAYS = 14;
 adminRouter.get('/stats', asyncHandler(async (_req, res) => {
   const windowStart = subDays(new Date(), STATS_WINDOW_DAYS - 1);
   windowStart.setHours(0, 0, 0, 0);
-  const [users, movies, series, activeSessions, storageAgg, recentUsers, watchByContent] = await Promise.all([
+  const [users, movies, series, games, software, downloadAgg, activeSessions, storageAgg, recentUsers, watchByContent, topDownloads] = await Promise.all([
     prisma.user.count(),
     prisma.content.count({ where: { type: 'MOVIE' } }),
     prisma.content.count({ where: { type: 'SERIES' } }),
+    prisma.download.count({ where: { category: 'GAME' } }),
+    prisma.download.count({ where: { category: 'SOFTWARE' } }),
+    prisma.download.aggregate({ _sum: { downloadCount: true } }),
     prisma.session.count({ where: { expiresAt: { gt: new Date() } } }),
     prisma.video.aggregate({ _sum: { size: true } }),
     prisma.user.findMany({ where: { createdAt: { gte: windowStart } }, select: { createdAt: true } }),
-    prisma.watchHistory.groupBy({ by: ['contentId'], _sum: { progressSeconds: true }, orderBy: { _sum: { progressSeconds: 'desc' } }, take: 8 })
+    prisma.watchHistory.groupBy({ by: ['contentId'], _sum: { progressSeconds: true }, orderBy: { _sum: { progressSeconds: 'desc' } }, take: 8 }),
+    prisma.download.findMany({ where: { downloadCount: { gt: 0 } }, orderBy: { downloadCount: 'desc' }, take: 8, select: { title: true, downloadCount: true } })
   ]);
 
   // Build a continuous day-by-day signup series so the chart has no gaps.
@@ -97,10 +102,37 @@ adminRouter.get('/stats', asyncHandler(async (_req, res) => {
     totalContent: movies + series,
     movies,
     series,
+    games,
+    software,
+    totalDownloads: games + software,
+    downloadCount: downloadAgg._sum.downloadCount ?? 0,
     activeSessions,
     storageBytes: Number(storageAgg._sum.size ?? 0n),
     newUsers,
-    topContent
+    topContent,
+    topDownloads: topDownloads.map((d) => ({ title: d.title, count: d.downloadCount }))
+  });
+}));
+
+adminRouter.get('/system', asyncHandler(async (_req, res) => {
+  const [downloads, pendingJobs, failedJobs] = await Promise.all([
+    prisma.download.count(),
+    prisma.uploadJob.count({ where: { status: { in: ['PENDING', 'PROCESSING'] } } }),
+    prisma.uploadJob.count({ where: { status: 'FAILED' } })
+  ]);
+  let dbOk = true;
+  try { await prisma.$queryRaw`SELECT 1`; } catch { dbOk = false; }
+  res.json({
+    appName: env.APP_NAME,
+    environment: env.NODE_ENV,
+    baseUrl: env.BASE_URL,
+    mediaDir: env.LOCAL_MEDIA_DIR,
+    uptimeSeconds: Math.round(process.uptime()),
+    email: emailStatus(),
+    db: dbOk ? 'ok' : 'down',
+    downloads,
+    pendingJobs,
+    failedJobs
   });
 }));
 
@@ -327,7 +359,9 @@ adminRouter.delete('/content/:id', asyncHandler(async (req, res) => {
   const id = requireParam(req, 'id');
   const videos = await prisma.video.findMany({ where: { contentId: id } });
   await prisma.content.delete({ where: { id } });
-  await Promise.all(videos.map((video) => video.storageKey ? deleteObjectByKey(video.storageKey.split('/master.m3u8')[0]!) : Promise.resolve()));
+  await Promise.all(videos.map((video) => video.storageKey
+    ? deleteObjectByKey(video.storageKey.split('/master.m3u8')[0]!).catch(() => undefined)
+    : Promise.resolve()));
   res.status(204).send();
 }));
 
@@ -469,7 +503,11 @@ const downloadFieldsSchema = z.object({
   developer: z.string().max(120).optional(),
   genre: z.string().max(60).optional(),
   coverImageUrl: z.string().url(),
-  isPublished: z.enum(['true', 'false']).optional()
+  isPublished: z.enum(['true', 'false']).optional(),
+  isFeatured: z.enum(['true', 'false']).optional(),
+  isTrending: z.enum(['true', 'false']).optional(),
+  isTopRanked: z.enum(['true', 'false']).optional(),
+  rank: z.coerce.number().int().min(1).max(100).optional()
 });
 
 const MAX_DOWNLOAD_BYTES = 5 * 1024 * 1024 * 1024;
@@ -562,7 +600,11 @@ async function receiveDownloadUpload(req: import('express').Request) {
             fileUrl,
             storageKey,
             fileSize: total,
-            isPublished: parsed.isPublished ? parsed.isPublished === 'true' : true
+            isPublished: parsed.isPublished ? parsed.isPublished === 'true' : true,
+            isFeatured: parsed.isFeatured === 'true',
+            isTrending: parsed.isTrending === 'true',
+            isTopRanked: parsed.isTopRanked === 'true',
+            rank: parsed.rank ?? null
           }
         });
         settled = true;
@@ -597,19 +639,19 @@ adminRouter.patch('/downloads/:id', asyncHandler(async (req, res) => {
     developer: z.string().max(120).nullable().optional(),
     genre: z.string().max(60).nullable().optional(),
     coverImageUrl: z.string().url().optional(),
-    isPublished: z.boolean().optional()
+    isPublished: z.boolean().optional(),
+    isFeatured: z.boolean().optional(),
+    isTrending: z.boolean().optional(),
+    isTopRanked: z.boolean().optional(),
+    rank: z.number().int().min(1).max(100).nullable().optional()
   }));
   const current = await prisma.download.findUnique({ where: { id } });
   if (!current) throw new AppError(404, 'DOWNLOAD_NOT_FOUND', 'Download not found');
-  const data: Prisma.DownloadUpdateInput = {};
+  const data: Prisma.DownloadUpdateInput = pickDefined(body, [
+    'description', 'platform', 'version', 'developer', 'genre',
+    'coverImageUrl', 'isPublished', 'isFeatured', 'isTrending', 'isTopRanked', 'rank'
+  ]);
   if (body.title !== undefined) { data.title = body.title; data.slug = slugify(body.title); }
-  if (body.description !== undefined) data.description = body.description;
-  if (body.platform !== undefined) data.platform = body.platform;
-  if (body.version !== undefined) data.version = body.version;
-  if (body.developer !== undefined) data.developer = body.developer;
-  if (body.genre !== undefined) data.genre = body.genre;
-  if (body.coverImageUrl !== undefined) data.coverImageUrl = body.coverImageUrl;
-  if (body.isPublished !== undefined) data.isPublished = body.isPublished;
   const download = await prisma.download.update({ where: { id }, data });
   res.json({ item: toDownloadDto(download) });
 }));

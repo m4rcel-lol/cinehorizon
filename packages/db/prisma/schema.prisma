@@ -20,6 +20,7 @@ model User {
   profiles       Profile[]
   sessions       Session[]
   verificationTokens EmailVerificationToken[]
+  passwordResetTokens PasswordResetToken[]
   @@index([role])
 }
 
@@ -33,6 +34,17 @@ model EmailVerificationToken {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+}
+
 model Profile {
   id           String         @id @default(cuid())
   userId       String
@@ -43,6 +55,7 @@ model Profile {
   user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   watchlist    Watchlist[]
   watchHistory WatchHistory[]
+  savedDownloads SavedDownload[]
   @@unique([userId, name])
   @@index([userId])
 }
@@ -158,6 +171,16 @@ model Watchlist {
   @@index([contentId])
 }
 
+model SavedDownload {
+  profileId  String
+  downloadId String
+  savedAt    DateTime @default(now())
+  profile    Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  download   Download @relation(fields: [downloadId], references: [id], onDelete: Cascade)
+  @@id([profileId, downloadId])
+  @@index([downloadId])
+}
+
 model WatchHistory {
   id              String   @id @default(cuid())
   key             String   @unique
@@ -225,11 +248,20 @@ model Download {
   fileSize      BigInt
   downloadCount Int              @default(0)
   isPublished   Boolean          @default(true)
+  isFeatured    Boolean          @default(false)
+  isTrending    Boolean          @default(false)
+  isTopRanked   Boolean          @default(false)
+  rank          Int?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
+  savedBy       SavedDownload[]
   @@unique([category, slug])
-  @@index([category])
+  @@index([category, isPublished, createdAt])
   @@index([isPublished])
+  @@index([isFeatured])
+  @@index([isTrending])
+  @@index([isTopRanked, rank])
+  @@index([downloadCount])
   @@index([createdAt])
 }
 
