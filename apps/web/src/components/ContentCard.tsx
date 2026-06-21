@@ -9,7 +9,7 @@ export function ContentCard({ item }: { item: Card }) {
       <strong>{item.title}</strong>
       <span>{item.releaseYear} · {item.ageRating} · {item.type === 'MOVIE' ? `${item.durationMinutes ?? 0}m` : 'Series'}</span>
       <p>{item.genres.slice(0, 3).map((g) => g.name).join(' · ')}</p>
-      {item.progressSeconds ? <div className="progress"><span style={{ width: `${Math.min(100, item.progressSeconds / 60)}%` }} /></div> : null}
+      {item.progressSeconds && item.durationMinutes ? <div className="progress"><span style={{ width: `${Math.min(100, (item.progressSeconds / (item.durationMinutes * 60)) * 100)}%` }} /></div> : null}
     </div>
     {item.isOriginal ? <em className="original-badge">Original</em> : null}
   </Link>;

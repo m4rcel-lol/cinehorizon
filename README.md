@@ -1,6 +1,11 @@
 # CineHorizon
 
-CineHorizon is a self-hostable streaming platform monorepo built from the uploaded specification: React 18 + TypeScript + Vite frontends, Node.js + Express + TypeScript API, PostgreSQL + Prisma, Redis/BullMQ, FFmpeg worker scaffolding, Docker Compose, and Nginx reverse proxy.
+CineHorizon is a self-hostable, Netflix-style catalog monorepo: React 18 + TypeScript + Vite frontends, Node.js + Express + TypeScript API, PostgreSQL + Prisma, Redis/BullMQ, an FFmpeg worker, Docker Compose, and an Nginx reverse proxy.
+
+It hosts two catalogs behind one Netflix-inspired UI:
+
+- **Software & Games** — the primary, actively-developed domain: a curated "Netflix for software" storefront with featured heroes, Trending/Top rails, detail pages, and direct downloads.
+- **Streaming (movies & series)** — the original video domain with HLS playback, profiles, watchlist, and continue-watching. It is kept runnable but is now secondary; see `TODO.md` for the direction.
 
 This repository is intentionally production-shaped: strict TypeScript, versioned `/api/v1` routes, HTTP-only refresh cookies, Prisma-only DB access, uniform API errors, server-side admin checks, HLS-first playback, and Docker deployment.
 
@@ -110,6 +115,8 @@ The API tests use Supertest against the real Express app with Prisma, Redis, sto
 - `/title/:slug`
 - `/watch/:contentId`
 - `/watch/:contentId/episode/:episodeId`
+- `/games` and `/games/:slug` (software/game storefront + detail)
+- `/software` and `/software/:slug`
 - `/search`
 - `/account`
 
@@ -127,6 +134,9 @@ The API tests use Supertest against the real Express app with Prisma, Redis, sto
 - HTTP-only refresh token cookie.
 - Short-lived access JWTs.
 - Refresh token rotation and DB session invalidation.
+- Email verification + password reset over a pluggable email service (SMTP/SES-compatible; console transport in dev).
+- Self-service device/session management (list + revoke) and password change that re-secures other devices.
+- Account-enumeration-safe forgot-password responses.
 - Password hashing with bcryptjs cost 12.
 - Helmet security headers.
 - Rate limiting.
@@ -139,7 +149,7 @@ The API tests use Supertest against the real Express app with Prisma, Redis, sto
 ## Next steps for real production use
 
 1. Size and back up the local media volume configured by `LOCAL_MEDIA_DIR`.
-2. Add your SMTP settings and plug `sendVerificationEmail` into the auth route.
-3. Run Prisma migrations instead of `db push`.
+2. Set `SMTP_HOST`/`SMTP_USER`/`SMTP_PASS` (e.g. Amazon SES SMTP) so verification and password-reset emails actually send — without them the API logs emails to the console. Status is visible in **Admin → Settings**.
+3. Run Prisma migrations instead of `db push` (new models added: `PasswordResetToken`, `SavedDownload`).
 4. Configure TLS in Nginx or put the stack behind Caddy/Cloudflare.
 5. Upload and publish your first titles from the admin panel.

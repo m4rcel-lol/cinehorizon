@@ -14,8 +14,12 @@ const categorySchema = z.enum(['GAME', 'SOFTWARE']);
 const listQuery = z.object({
   category: categorySchema.optional(),
   platform: z.enum(['WINDOWS', 'MAC', 'LINUX', 'ANDROID', 'IOS', 'WEB', 'MULTI']).optional(),
-  q: z.string().optional()
+  q: z.string().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().min(1).max(50).default(24)
 });
+
+const shelfQuery = z.object({ category: categorySchema.optional() });
 
 function requireCategory(req: import('express').Request) {
   const parsed = categorySchema.safeParse(requireParam(req, 'category').toUpperCase());
@@ -31,7 +35,40 @@ downloadsRouter.get('/', asyncHandler(async (req, res) => {
     ...(query.platform ? { platform: query.platform } : {}),
     ...(query.q ? { OR: [{ title: { contains: query.q, mode: 'insensitive' as const } }, { description: { contains: query.q, mode: 'insensitive' as const } }] } : {})
   };
-  const items = await prisma.download.findMany({ where, orderBy: { createdAt: 'desc' } });
+  const [items, total] = await Promise.all([
+    prisma.download.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (query.page - 1) * query.limit, take: query.limit }),
+    prisma.download.count({ where })
+  ]);
+  res.json({ items: items.map(toDownloadDto), total, page: query.page, limit: query.limit });
+}));
+
+downloadsRouter.get('/featured', asyncHandler(async (req, res) => {
+  const { category } = parseQuery(req, shelfQuery);
+  const items = await prisma.download.findMany({
+    where: { isPublished: true, isFeatured: true, ...(category ? { category } : {}) },
+    orderBy: { updatedAt: 'desc' },
+    take: 5
+  });
+  res.json({ items: items.map(toDownloadDto) });
+}));
+
+downloadsRouter.get('/trending', asyncHandler(async (req, res) => {
+  const { category } = parseQuery(req, shelfQuery);
+  const items = await prisma.download.findMany({
+    where: { isPublished: true, isTrending: true, ...(category ? { category } : {}) },
+    orderBy: { downloadCount: 'desc' },
+    take: 20
+  });
+  res.json({ items: items.map(toDownloadDto) });
+}));
+
+downloadsRouter.get('/top', asyncHandler(async (req, res) => {
+  const { category } = parseQuery(req, shelfQuery);
+  const items = await prisma.download.findMany({
+    where: { isPublished: true, isTopRanked: true, ...(category ? { category } : {}) },
+    orderBy: [{ rank: 'asc' }, { downloadCount: 'desc' }],
+    take: 10
+  });
   res.json({ items: items.map(toDownloadDto) });
 }));
 

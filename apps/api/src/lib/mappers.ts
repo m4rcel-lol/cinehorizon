@@ -61,6 +61,10 @@ export function toDownloadDto(download: Download) {
     fileSize: Number(download.fileSize),
     downloadCount: download.downloadCount,
     isPublished: download.isPublished,
+    isFeatured: download.isFeatured,
+    isTrending: download.isTrending,
+    isTopRanked: download.isTopRanked,
+    rank: download.rank,
     createdAt: download.createdAt.toISOString()
   };
 }

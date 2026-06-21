@@ -2,6 +2,7 @@ import { lazy, useEffect } from 'react';
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { api } from './api';
 import { useAdminStore } from './store';
+import { Toaster } from './components/Toaster';
 const Login = lazy(() => import('./pages/Login'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Content = lazy(() => import('./pages/Content'));
@@ -29,7 +30,7 @@ function Shell({ children }: { children: JSX.Element }) {
     logoutSoft();
     navigate('/login');
   }
-  return <div className="admin-shell"><aside className="admin-sidebar"><div className="brand"><span>Cine</span><b>Horizon</b><small>ADMIN</small></div><NavLink to="/">Dashboard</NavLink><NavLink to="/content">Movies &amp; TV</NavLink><NavLink to="/games">Games</NavLink><NavLink to="/software">Software</NavLink><NavLink to="/users">Users</NavLink><NavLink to="/uploads">Uploads</NavLink><NavLink to="/settings">Settings</NavLink><button onClick={logout}>Sign out</button></aside><section className="admin-main">{children}</section></div>;
+  return <div className="admin-shell"><aside className="admin-sidebar"><div className="brand"><span>Cine</span><b>Horizon</b><small>ADMIN</small></div><NavLink to="/">Dashboard</NavLink><NavLink to="/content">Movies &amp; TV</NavLink><NavLink to="/games">Games</NavLink><NavLink to="/software">Software</NavLink><NavLink to="/users">Users</NavLink><NavLink to="/uploads">Uploads</NavLink><NavLink to="/settings">Settings</NavLink><button onClick={logout}>Sign out</button></aside><section className="admin-main">{children}</section><Toaster /></div>;
 }
 
 export default function App() {

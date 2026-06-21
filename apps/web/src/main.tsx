@@ -11,7 +11,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <Suspense fallback={<div className="route-loader">Loading CineHorizon…</div>}>
+        <Suspense fallback={<div className="route-loader"><span className="route-loader-mark">CINEHORIZON</span><span className="spinner" /></div>}>
           <App />
         </Suspense>
       </BrowserRouter>

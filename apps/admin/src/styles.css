@@ -152,7 +152,12 @@ tr:last-child td { border-bottom: 0; }
 .badge.failed, .badge.archived { color: #ff8585; background: rgba(229, 9, 20, 0.18); }
 .badge.draft { color: var(--ch-text-secondary); background: #333; }
 
-.row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+/* Keep this a real table-cell (don't use display:flex on a <td> — it stops the
+   cell stretching to the row height and misaligns the row dividers). Lay the
+   buttons out inline so the cell still stretches and borders stay aligned. */
+.row-actions { white-space: nowrap; }
+.row-actions button { display: inline-flex; align-items: center; margin: 3px 6px 3px 0; vertical-align: middle; }
+.row-actions button:last-child { margin-right: 0; }
 
 .ghost {
   color: #fff;
@@ -231,7 +236,10 @@ legend { color: var(--ch-text-secondary); padding: 0 6px; }
 .rank-input input { width: 70px; }
 .drawer-actions { position: sticky; bottom: -28px; display: flex; justify-content: flex-end; gap: 10px; padding: 14px 0 0; background: var(--ch-surface); }
 .bar { height: 8px; background: #333; border-radius: 999px; overflow: hidden; }
-.bar span { display: block; height: 100%; background: var(--ch-green); }
+.bar span { display: block; height: 100%; background: var(--ch-green); transition: width 160ms ease; }
+.upload-progress { margin: 18px 0 4px; }
+.upload-progress-head { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.86rem; color: var(--ch-text-secondary); }
+.upload-progress-head span:last-child { font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
 
 @media (max-width: 980px) {
   .admin-shell { grid-template-columns: 1fr; }
@@ -242,6 +250,107 @@ legend { color: var(--ch-text-secondary); padding: 0 6px; }
   .stats, .charts, .form-grid, .upload-grid { grid-template-columns: 1fr; }
   .topline { flex-direction: column; }
 }
+
+/* ── Toolbar / search / pager ───────────────────────────────────── */
+.search-input {
+  min-width: 240px;
+  padding: 9px 13px;
+  border-radius: 9px;
+  border: 1px solid var(--ch-border);
+  background: var(--ch-void);
+  color: #fff;
+  transition: border-color 160ms ease;
+}
+.search-input:focus { border-color: var(--ch-red); outline: none; }
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  margin-top: 16px;
+  color: var(--ch-text-secondary);
+  font-size: 0.86rem;
+}
+.cell-error { color: #ff8585; }
+
+/* merchandising toggle chips (Downloads table) */
+.row-actions .ghost.on {
+  border-color: var(--ch-red);
+  color: #fff;
+  background: rgba(229, 9, 20, 0.16);
+}
+
+/* ── Settings ───────────────────────────────────────────────────── */
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 18px;
+}
+.kv { margin: 8px 0 0; display: flex; flex-direction: column; }
+.kv > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px 0;
+  border-top: 1px solid var(--ch-border);
+}
+.kv > div:first-child { border-top: none; }
+.kv dt { color: var(--ch-text-secondary); font-size: 0.86rem; }
+.kv dd { margin: 0; font-weight: 600; text-align: right; word-break: break-word; }
+.hint { margin: 14px 0 0; color: var(--ch-text-muted); font-size: 0.84rem; line-height: 1.6; }
+.hint code { background: var(--ch-elevated); padding: 1px 6px; border-radius: 5px; }
+
+/* ── Toasts ─────────────────────────────────────────────────────── */
+@keyframes a-toast-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.toaster {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: min(360px, calc(100vw - 44px));
+}
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 13px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--ch-border);
+  background: var(--ch-elevated);
+  color: #fff;
+  text-align: left;
+  font-size: 0.9rem;
+  cursor: pointer;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5);
+  animation: a-toast-in 240ms ease both;
+}
+.toast-glyph {
+  flex: 0 0 auto;
+  width: 22px; height: 22px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+.toast-success .toast-glyph { background: rgba(70, 211, 105, 0.16); color: var(--ch-green); }
+.toast-error .toast-glyph { background: rgba(229, 9, 20, 0.18); color: #ff8585; }
+.toast-info .toast-glyph { background: rgba(255, 255, 255, 0.1); color: #fff; }
+.toast-error { border-color: rgba(229, 9, 20, 0.4); }
+
+/* ── Motion ─────────────────────────────────────────────────────── */
+@keyframes a-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.admin-main > * { animation: a-rise 360ms ease both; }
+.admin-sidebar a { transition: background 160ms ease, color 160ms ease; }
+.stat-card, .panel { transition: border-color 200ms ease, transform 200ms ease; }
+.stat-card:hover { transform: translateY(-2px); }
+tbody tr { transition: background 140ms ease; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; }

@@ -1,58 +1,61 @@
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { downloadsApi } from '../lib/api';
+import { DownloadRow } from '../components/DownloadRow';
+import { Footer } from '../components/Footer';
+import { formatCount } from '../lib/format';
 import type { DownloadCategory, DownloadItem } from '../types';
 
-function formatSize(bytes: number) {
-  if (!bytes) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  return `${(bytes / 1024 ** exponent).toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`;
-}
-
 const copy: Record<DownloadCategory, { heading: string; tagline: string; empty: string }> = {
-  GAME: { heading: 'Games', tagline: 'Download games published by CineHorizon.', empty: 'Games appear here after an admin uploads them.' },
-  SOFTWARE: { heading: 'Software', tagline: 'Download software and apps published by CineHorizon.', empty: 'Software appears here after an admin uploads it.' }
+  GAME: { heading: 'Games', tagline: 'Stream-free, download-and-play games — curated by CineHorizon.', empty: 'Games appear here after an admin publishes them.' },
+  SOFTWARE: { heading: 'Software', tagline: 'Apps and tools for every platform — curated by CineHorizon.', empty: 'Software appears here after an admin publishes it.' }
 };
 
 export default function Downloads({ category }: { category: DownloadCategory }) {
   const text = copy[category];
-  const items = useQuery({ queryKey: ['downloads', category], queryFn: () => downloadsApi.list(category) });
+  const featured = useQuery({ queryKey: ['dl-featured', category], queryFn: () => downloadsApi.featured(category) });
+  const trending = useQuery({ queryKey: ['dl-trending', category], queryFn: () => downloadsApi.trending(category) });
+  const top = useQuery({ queryKey: ['dl-top', category], queryFn: () => downloadsApi.top(category) });
+  const all = useQuery({ queryKey: ['dl-all', category], queryFn: () => downloadsApi.list(category) });
 
-  return <main className="games-page">
-    <header className="games-head">
-      <h1>{text.heading}</h1>
-      <p>{text.tagline}</p>
-    </header>
+  const hero = featured.data?.items[0] ?? all.data?.items[0];
+  const isLoading = featured.isLoading || trending.isLoading || top.isLoading || all.isLoading;
+  const hasItems = Boolean(all.data?.items.length);
 
-    {items.isLoading ? <p className="games-status">Loading…</p> : null}
-
-    {!items.isLoading && !items.data?.items.length
-      ? <section className="empty-catalog"><h2>Nothing here yet</h2><p>{text.empty}</p></section>
-      : null}
-
-    <div className="games-grid">
-      {items.data?.items.map((item) => <DownloadCard key={item.id} item={item} category={category} />)}
+  return <main>
+    <DownloadHero item={hero} category={category} heading={text.heading} tagline={text.tagline} />
+    <div className="rows">
+      <DownloadRow title={`Trending ${text.heading}`} items={trending.data?.items} />
+      <DownloadRow title={`Top ${text.heading}`} items={top.data?.items} />
+      <DownloadRow title={`All ${text.heading}`} items={all.data?.items} />
+      {!isLoading && !hasItems
+        ? <section className="empty-catalog"><h2>Nothing here yet</h2><p>{text.empty}</p></section>
+        : null}
     </div>
-
-    <footer className="footer"><span>CineHorizon</span><span>Help Centre</span><span>Terms</span><span>Privacy</span><small>© 2026 CineHorizon</small></footer>
+    <Footer />
   </main>;
 }
 
-function DownloadCard({ item, category }: { item: DownloadItem; category: DownloadCategory }) {
-  return <article className="game-card">
-    <div className="game-cover"><img src={item.coverImageUrl} alt={item.title} loading="lazy" /></div>
-    <div className="game-body">
-      <div className="game-meta">
-        <span className="game-platform">{item.platform}</span>
-        {item.version ? <span className="game-version">v{item.version}</span> : null}
+function DownloadHero({ item, category, heading, tagline }: { item: DownloadItem | undefined; category: DownloadCategory; heading: string; tagline: string }) {
+  if (!item) return <section className="hero hero-empty">
+    <div className="hero-content"><h1>{heading}</h1><p>{tagline}</p></div>
+  </section>;
+  const to = `/${category.toLowerCase() === 'game' ? 'games' : 'software'}/${item.slug}`;
+  return <section className="hero" style={{ backgroundImage: `linear-gradient(to right, rgba(10,10,10,.92), rgba(10,10,10,.45), rgba(10,10,10,0)), linear-gradient(to top, #0a0a0a, transparent 45%), url(${item.coverImageUrl})` }}>
+    <div className="hero-content">
+      <span className="hero-eyebrow">{heading}</span>
+      <h1>{item.title}</h1>
+      <div className="meta">
+        <span>{item.platform}</span>
+        {item.version ? <span>v{item.version}</span> : null}
+        {item.developer ? <span>{item.developer}</span> : null}
+        {item.downloadCount ? <span>{formatCount(item.downloadCount)} downloads</span> : null}
       </div>
-      <h2>{item.title}</h2>
-      {item.developer ? <p className="game-dev">{item.developer}</p> : null}
-      <p className="game-desc">{item.description}</p>
-      <div className="game-footer">
-        <span className="game-size">{formatSize(item.fileSize)} · {item.downloadCount} downloads</span>
-        <a className="game-download" href={downloadsApi.downloadUrl(category, item.slug)} download>Download</a>
+      <p>{item.description}</p>
+      <div className="cta-row">
+        <a className="play-btn" href={downloadsApi.downloadUrl(category, item.slug)} download>↓ Download</a>
+        <Link className="info-btn" to={to}>ⓘ More Info</Link>
       </div>
     </div>
-  </article>;
+  </section>;
 }

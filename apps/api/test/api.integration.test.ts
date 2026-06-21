@@ -100,15 +100,44 @@ interface WatchlistRecord {
   addedAt: Date;
 }
 
+type DownloadCategory = 'GAME' | 'SOFTWARE';
+
+interface DownloadRecord {
+  id: string;
+  category: DownloadCategory;
+  title: string;
+  slug: string;
+  description: string;
+  platform: string;
+  version: string | null;
+  developer: string | null;
+  genre: string | null;
+  coverImageUrl: string;
+  fileName: string;
+  fileUrl: string;
+  storageKey: string;
+  fileSize: bigint;
+  downloadCount: number;
+  isPublished: boolean;
+  isFeatured: boolean;
+  isTrending: boolean;
+  isTopRanked: boolean;
+  rank: number | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 interface TestDb {
   users: UserRecord[];
   profiles: ProfileRecord[];
   sessions: SessionRecord[];
   verificationTokens: EmailVerificationTokenRecord[];
+  passwordResetTokens: EmailVerificationTokenRecord[];
   genres: GenreRecord[];
   cast: CastMemberRecord[];
   content: ContentRecord[];
   watchlist: WatchlistRecord[];
+  downloads: DownloadRecord[];
 }
 
 interface AccessPayload {
@@ -125,10 +154,12 @@ const state = vi.hoisted(() => {
     profiles: [],
     sessions: [],
     verificationTokens: [],
+    passwordResetTokens: [],
     genres: [],
     cast: [],
     content: [],
-    watchlist: []
+    watchlist: [],
+    downloads: []
   };
   const tokens = new Map<string, AccessPayload>();
   let counter = 0;
@@ -144,10 +175,12 @@ const state = vi.hoisted(() => {
       db.profiles = [];
       db.sessions = [];
       db.verificationTokens = [];
+      db.passwordResetTokens = [];
       db.genres = [];
       db.cast = [];
       db.content = [];
       db.watchlist = [];
+      db.downloads = [];
       tokens.clear();
       counter = 0;
     }
@@ -259,6 +292,48 @@ function seedPublishedContent() {
   return content;
 }
 
+function seedDownload(overrides: Partial<DownloadRecord> = {}) {
+  const title = overrides.title ?? 'Seed App';
+  const slug = overrides.slug ?? title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  const download: DownloadRecord = {
+    id: state.nextId('download'),
+    category: 'SOFTWARE',
+    title,
+    slug,
+    description: 'A seeded download.',
+    platform: 'WINDOWS',
+    version: '1.0.0',
+    developer: 'Seed Studio',
+    genre: 'Productivity',
+    coverImageUrl: 'https://example.test/cover.jpg',
+    fileName: `${slug}.zip`,
+    fileUrl: `/media/downloads/${slug}.zip`,
+    storageKey: `downloads/software/${slug}/${slug}.zip`,
+    fileSize: 1024n,
+    downloadCount: 0,
+    isPublished: true,
+    isFeatured: false,
+    isTrending: false,
+    isTopRanked: false,
+    rank: null,
+    createdAt: now(),
+    updatedAt: now(),
+    ...overrides
+  };
+  state.db.downloads.push(download);
+  return download;
+}
+
+function matchDownloadWhere(download: DownloadRecord, where: JsonObject) {
+  if (typeof where.isPublished === 'boolean' && download.isPublished !== where.isPublished) return false;
+  if (typeof where.category === 'string' && download.category !== where.category) return false;
+  if (typeof where.platform === 'string' && download.platform !== where.platform) return false;
+  if (typeof where.isFeatured === 'boolean' && download.isFeatured !== where.isFeatured) return false;
+  if (typeof where.isTrending === 'boolean' && download.isTrending !== where.isTrending) return false;
+  if (typeof where.isTopRanked === 'boolean' && download.isTopRanked !== where.isTopRanked) return false;
+  return true;
+}
+
 vi.mock('../src/lib/jwt.js', () => ({
   signAccessToken(payload: AccessPayload) {
     const token = `access-${payload.sub}-${state.tokens.size + 1}`;
@@ -339,6 +414,7 @@ vi.mock('../src/lib/prisma.js', () => {
         if (!user) throw new Error('User not found');
         if (data.role === 'USER' || data.role === 'ADMIN') user.role = data.role;
         if (typeof data.isVerified === 'boolean') user.isVerified = data.isVerified;
+        if (typeof data.passwordHash === 'string') user.passwordHash = data.passwordHash;
         user.updatedAt = now();
         return { ...user };
       }),
@@ -377,10 +453,26 @@ vi.mock('../src/lib/prisma.js', () => {
         state.db.sessions = state.db.sessions.filter((session) => session.id !== where.id);
         return {};
       }),
+      findMany: vi.fn(async (query: JsonObject) => {
+        const where = getWhere(query);
+        return state.db.sessions.filter((session) => !where.userId || session.userId === where.userId).map((session) => ({ ...session }));
+      }),
+      findFirst: vi.fn(async (query: JsonObject) => {
+        const where = getWhere(query);
+        return state.db.sessions.find((session) => session.id === where.id && session.userId === where.userId) ?? null;
+      }),
       deleteMany: vi.fn(async (query: JsonObject) => {
         const where = getWhere(query);
         const before = state.db.sessions.length;
-        state.db.sessions = state.db.sessions.filter((session) => session.token !== where.token);
+        const tokenNot = where.token && typeof where.token === 'object' && !Array.isArray(where.token) ? (where.token as JsonObject).not : undefined;
+        state.db.sessions = state.db.sessions.filter((session) => {
+          if (typeof where.token === 'string' && session.token === where.token) return false;
+          if (where.userId && session.userId === where.userId) {
+            if (typeof tokenNot === 'string') return session.token === tokenNot;
+            return false;
+          }
+          return true;
+        });
         return { count: before - state.db.sessions.length };
       }),
       count: vi.fn(async () => state.db.sessions.length)
@@ -390,10 +482,50 @@ vi.mock('../src/lib/prisma.js', () => {
         const where = getWhere(query);
         return state.db.verificationTokens.find((token) => token.tokenHash === where.tokenHash) ?? null;
       }),
+      create: vi.fn(async (query: JsonObject) => {
+        const data = getData(query);
+        const token: EmailVerificationTokenRecord = {
+          id: state.nextId('verify'),
+          userId: requiredString(data.userId, 'userId'),
+          tokenHash: requiredString(data.tokenHash, 'tokenHash'),
+          expiresAt: data.expiresAt instanceof Date ? data.expiresAt : now(),
+          usedAt: null,
+          createdAt: now()
+        };
+        state.db.verificationTokens.push(token);
+        return token;
+      }),
       update: vi.fn(async (query: JsonObject) => {
         const where = getWhere(query);
         const data = getData(query);
         const token = state.db.verificationTokens.find((item) => item.id === where.id);
+        if (!token) throw new Error('Token not found');
+        token.usedAt = data.usedAt instanceof Date ? data.usedAt : now();
+        return token;
+      })
+    },
+    passwordResetToken: {
+      findUnique: vi.fn(async (query: JsonObject) => {
+        const where = getWhere(query);
+        return state.db.passwordResetTokens.find((token) => token.tokenHash === where.tokenHash) ?? null;
+      }),
+      create: vi.fn(async (query: JsonObject) => {
+        const data = getData(query);
+        const token: EmailVerificationTokenRecord = {
+          id: state.nextId('reset'),
+          userId: requiredString(data.userId, 'userId'),
+          tokenHash: requiredString(data.tokenHash, 'tokenHash'),
+          expiresAt: data.expiresAt instanceof Date ? data.expiresAt : now(),
+          usedAt: null,
+          createdAt: now()
+        };
+        state.db.passwordResetTokens.push(token);
+        return token;
+      }),
+      update: vi.fn(async (query: JsonObject) => {
+        const where = getWhere(query);
+        const data = getData(query);
+        const token = state.db.passwordResetTokens.find((item) => item.id === where.id);
         if (!token) throw new Error('Token not found');
         token.usedAt = data.usedAt instanceof Date ? data.usedAt : now();
         return token;
@@ -599,6 +731,39 @@ vi.mock('../src/lib/prisma.js', () => {
       create: vi.fn(async () => ({})),
       findUnique: vi.fn(async () => null)
     },
+    download: {
+      findMany: vi.fn(async (query: JsonObject) => {
+        const where = getWhere(query);
+        const rows = state.db.downloads.filter((download) => matchDownloadWhere(download, where));
+        const skip = typeof query.skip === 'number' ? query.skip : 0;
+        const take = typeof query.take === 'number' ? query.take : rows.length;
+        return rows.slice(skip, skip + take).map((download) => ({ ...download }));
+      }),
+      count: vi.fn(async (query: JsonObject) => {
+        const where = getWhere(query);
+        return state.db.downloads.filter((download) => matchDownloadWhere(download, where)).length;
+      }),
+      findUnique: vi.fn(async (query: JsonObject) => {
+        const where = getWhere(query);
+        const composite = where.category_slug;
+        if (composite && typeof composite === 'object' && !Array.isArray(composite)) {
+          const key = composite as JsonObject;
+          return state.db.downloads.find((download) => download.category === key.category && download.slug === key.slug) ?? null;
+        }
+        return state.db.downloads.find((download) => download.id === where.id) ?? null;
+      }),
+      update: vi.fn(async (query: JsonObject) => {
+        const where = getWhere(query);
+        const data = getData(query);
+        const download = state.db.downloads.find((item) => item.id === where.id);
+        if (!download) throw new Error('Download not found');
+        const count = data.downloadCount;
+        if (count && typeof count === 'object' && !Array.isArray(count) && typeof (count as JsonObject).increment === 'number') {
+          download.downloadCount += (count as JsonObject).increment as number;
+        }
+        return { ...download };
+      })
+    },
     $transaction: vi.fn(async (items: Array<Promise<unknown>>) => Promise.all(items)),
     $queryRaw: vi.fn(async () => [{ '?column?': 1 }])
   };
@@ -789,5 +954,125 @@ describe('admin content CRUD', () => {
       .expect(204);
 
     expect(state.db.content).toHaveLength(0);
+  });
+});
+
+describe('downloads storefront', () => {
+  it('lists published items with pagination and a total', async () => {
+    const app = createApp();
+    seedDownload({ title: 'Visible App' });
+    seedDownload({ title: 'Hidden App', isPublished: false });
+
+    const response = await request(app)
+      .get('/api/v1/downloads?category=SOFTWARE')
+      .expect(200);
+
+    expect(response.body.items).toHaveLength(1);
+    expect(response.body.items[0].title).toBe('Visible App');
+    expect(response.body.total).toBe(1);
+    expect(response.body.page).toBe(1);
+  });
+
+  it('returns only featured items on the featured shelf', async () => {
+    const app = createApp();
+    seedDownload({ title: 'Plain App' });
+    seedDownload({ title: 'Hero App', isFeatured: true });
+
+    const response = await request(app)
+      .get('/api/v1/downloads/featured?category=SOFTWARE')
+      .expect(200);
+
+    expect(response.body.items).toHaveLength(1);
+    expect(response.body.items[0].title).toBe('Hero App');
+    expect(response.body.items[0].isFeatured).toBe(true);
+  });
+
+  it('serves a single item by category and slug, hiding unpublished ones', async () => {
+    const app = createApp();
+    seedDownload({ title: 'Detail App', slug: 'detail-app' });
+    seedDownload({ title: 'Secret App', slug: 'secret-app', isPublished: false });
+
+    const ok = await request(app)
+      .get('/api/v1/downloads/software/detail-app')
+      .expect(200);
+    expect(ok.body.item.slug).toBe('detail-app');
+
+    await request(app)
+      .get('/api/v1/downloads/software/secret-app')
+      .expect(404);
+  });
+});
+
+describe('password reset + sessions', () => {
+  async function registerUser(app: ReturnType<typeof createApp>, email: string) {
+    const register = await request(app)
+      .post('/api/v1/auth/register')
+      .send({ email, password: 'Password123!', displayName: 'Member' })
+      .expect(201);
+    return { token: register.body.accessToken as string, cookie: register.headers['set-cookie'] as unknown as string };
+  }
+
+  it('resets a password via token and revokes existing sessions', async () => {
+    const app = createApp();
+    await registerUser(app, 'reset@example.test');
+
+    const forgot = await request(app)
+      .post('/api/v1/auth/forgot-password')
+      .send({ email: 'reset@example.test' })
+      .expect(200);
+
+    const resetToken = forgot.body.devResetToken as string;
+    expect(resetToken).toEqual(expect.any(String));
+    expect(state.db.sessions).toHaveLength(1);
+
+    await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({ token: resetToken, password: 'BrandNew123!' })
+      .expect(200);
+
+    // Old sessions are gone; the new password works.
+    expect(state.db.sessions).toHaveLength(0);
+    await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'reset@example.test', password: 'BrandNew123!' })
+      .expect(200);
+  });
+
+  it('does not reveal whether an email exists', async () => {
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/v1/auth/forgot-password')
+      .send({ email: 'nobody@example.test' })
+      .expect(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.devResetToken).toBeUndefined();
+  });
+
+  it('changes password with the current one and keeps the current session', async () => {
+    const app = createApp();
+    const { token, cookie } = await registerUser(app, 'change@example.test');
+
+    await request(app)
+      .post('/api/v1/auth/change-password')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', cookie)
+      .send({ currentPassword: 'WrongPass1!', newPassword: 'Another123!' })
+      .expect(400);
+
+    await request(app)
+      .post('/api/v1/auth/change-password')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', cookie)
+      .send({ currentPassword: 'Password123!', newPassword: 'Another123!' })
+      .expect(200);
+
+    // The device that changed the password stays signed in.
+    const sessions = await request(app)
+      .get('/api/v1/auth/sessions')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(sessions.body.sessions).toHaveLength(1);
+    expect(sessions.body.sessions[0].current).toBe(true);
   });
 });

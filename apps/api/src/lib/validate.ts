@@ -27,3 +27,20 @@ export function requireActiveProfileId(req: Request): string {
   if (!req.activeProfileId) throw new AppError(400, 'PROFILE_REQUIRED', 'x-profile-id header is required');
   return req.activeProfileId;
 }
+
+/**
+ * Build a Prisma update payload from a validated body, copying only the keys
+ * that were actually provided (`!== undefined`). Removes the repetitive
+ * `if (body.x !== undefined) data.x = body.x` blocks in the route handlers.
+ */
+export function pickDefined<T extends object, K extends keyof T>(
+  source: T,
+  keys: readonly K[]
+): { [P in K]?: Exclude<T[P], undefined> } {
+  const result: { [P in K]?: Exclude<T[P], undefined> } = {};
+  for (const key of keys) {
+    const value = source[key];
+    if (value !== undefined) result[key] = value as Exclude<T[K], undefined>;
+  }
+  return result;
+}
