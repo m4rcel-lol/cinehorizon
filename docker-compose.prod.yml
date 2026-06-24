@@ -1,0 +1,54 @@
+# Production overlay for cinehorizons.eu.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# - Drops all public host port mappings (shared server: Postgres/Redis/API must
+#   never be world-reachable). Only the nginx container is exposed, and only to
+#   the shared "edge" Docker network that the platform Caddy reverse-proxies from.
+# - Overrides the localhost URLs baked into the base file with the real https origin.
+services:
+  db:
+    restart: unless-stopped
+    ports: !override []
+
+  redis:
+    restart: unless-stopped
+    ports: !override []
+
+  api:
+    restart: unless-stopped
+    ports: !override []
+    environment:
+      NODE_ENV: production
+      BASE_URL: https://cinehorizons.eu
+      WEB_ORIGIN: https://cinehorizons.eu
+      ADMIN_ORIGIN: https://cinehorizons.eu/admin
+      CORS_ORIGINS: https://cinehorizons.eu,https://www.cinehorizons.eu
+      MEDIA_PUBLIC_URL: https://cinehorizons.eu/media
+
+  worker:
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      BASE_URL: https://cinehorizons.eu
+      WEB_ORIGIN: https://cinehorizons.eu
+      ADMIN_ORIGIN: https://cinehorizons.eu/admin
+      CORS_ORIGINS: https://cinehorizons.eu,https://www.cinehorizons.eu
+      MEDIA_PUBLIC_URL: https://cinehorizons.eu/media
+
+  nginx:
+    container_name: cinehorizon-nginx
+    restart: unless-stopped
+    ports: !override []
+    networks:
+      - default
+      - edge
+
+  # Keep app tiers up across reboots too.
+  web:
+    restart: unless-stopped
+  admin:
+    restart: unless-stopped
+
+networks:
+  edge:
+    external: true
